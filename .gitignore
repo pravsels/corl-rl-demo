@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+.env
+
+# Local data: recordings, checkpoints, logs
+data/
+outputs/
+checkpoints/
+wandb/
+*.pt
+*.safetensors
