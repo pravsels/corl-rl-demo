@@ -24,7 +24,8 @@ BUTTON_PORT = "/dev/cu.usbserial-110"
 TOP_CAMERA = 0
 CAMERA_WIDTH, CAMERA_HEIGHT, CAMERA_FPS = 320, 240, 30
 
-JOINTS = ("shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper")
+# Motor IDs 1 to 5, in this order. The arm has no gripper motor (see five_motor.py).
+JOINTS = ("shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll")
 HOT_C = 55
 
 
@@ -61,7 +62,7 @@ def check_arm(port: str) -> str:
             raise CheckFailed(str(error).splitlines()[0]) from error
         found = str(error).rsplit("\n", 1)[-1].replace("{}", "none")
         raise CheckFailed(
-            f"the adapter answers but not all six motors do (found {found}): "
+            f"the adapter answers but not all {len(JOINTS)} motors do (found {found}): "
             "is the arm's power supply plugged in and on, and the cable to the first motor seated?"
         ) from error
     try:
@@ -70,7 +71,10 @@ def check_arm(port: str) -> str:
     finally:
         bus.disconnect(disable_torque=False)
     hottest = max(temps, key=temps.get)
-    summary = f"6 motors, {min(volts.values()) / 10:.1f} V, hottest {hottest} at {temps[hottest]} C"
+    summary = (
+        f"{len(JOINTS)} motors, {min(volts.values()) / 10:.1f} V, "
+        f"hottest {hottest} at {temps[hottest]} C"
+    )
     if temps[hottest] >= HOT_C:
         raise CheckFailed(f"{summary}: let it cool before running")
     return summary

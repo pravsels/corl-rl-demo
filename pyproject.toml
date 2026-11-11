@@ -13,6 +13,7 @@ dependencies = [
 [project.scripts]
 button-monitor = "corl_rl_demo.buttons:main"
 rig-check = "corl_rl_demo.rig:main"
+lerobot-5motor = "corl_rl_demo.five_motor:main"
 
 [dependency-groups]
 dev = ["pytest>=8"]

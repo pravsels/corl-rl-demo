@@ -11,7 +11,9 @@ success rate and time-to-press improving. Everything runs on one MacBook Air
 
 ## Rig
 
-- SO-101 follower arm, plus a leader arm for recording demos.
+- SO-101 follower arm, plus a leader arm for recording demos. The follower runs
+  on five motors: its gripper motor now drives a joint whose own motor failed,
+  and the jaw is fixed shut.
 - Top camera on a pole: OpenCV index 0 on the Mac, recorded at 320x240, 30 fps.
   That mode is 4:3 and crops the sides of the camera's 16:9 view, so aim the
   camera with `rig-check`'s saved frame, not with a 16:9 preview. Wrist camera
@@ -46,6 +48,11 @@ success rate and time-to-press improving. Everything runs on one MacBook Air
    weights and a 320x240 forward pass takes about 10 ms on the Mac's GPU;
    recording and reading back a video dataset works.
 8. **Pins.** Python 3.12, `lerobot[feetech]==0.5.1`.
+9. **Five joints, no gripper.** The gripper is left out, not held at a constant:
+   states and actions are five numbers in the demos, in ACT and in the learner.
+   `lerobot-5motor` runs LeRobot's commands with five-motor arm types. Checked
+   with made-up data and no arm: a five-joint dataset records, ACT trains on it,
+   and the checkpoint returns five-number actions.
 
 ## Steps
 
@@ -76,6 +83,10 @@ Each step ends with a check. Stop for review after each one.
 - **Servos overheat over a full day.** Read temperatures and pause between
   episodes when they climb.
 - **The module slides when pressed.** The board fixes this (step 3).
+- **The reused gripper motor is weak as a joint.** LeRobot left it with half
+  torque and a low overload limit. The follower class writes the other joints'
+  limits to every joint each time it connects; read them back after the first
+  calibration.
 - **Quick taps missed.** Checked in step 2: the module reports on change, and
   finger taps of 0.12-0.16 s all registered (one per button). It debounces for
   50 ms, so the arm must hold the button down longer than that.
