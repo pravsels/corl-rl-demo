@@ -89,6 +89,10 @@ Each step ends with a check. Stop for review after each one.
   torque and a low overload limit. The follower class writes the other joints'
   limits to every joint each time it connects; read them back after the first
   calibration.
+- **A servo's reply is late now and then while the camera streams.** Usually
+  1 ms, sometimes 40-80 ms, and LeRobot gives up after about 50 ms. That stopped
+  `lerobot-record` while connecting. The arm classes ask again up to three
+  times. Count the late replies in the RL loop and in the dry run.
 - **Quick taps missed.** Checked in step 2: the module reports on change, and
   finger taps of 0.12-0.16 s all registered (one per button). It debounces for
   50 ms, so the arm must hold the button down longer than that.

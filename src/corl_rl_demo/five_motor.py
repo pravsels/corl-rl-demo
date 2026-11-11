@@ -37,10 +37,38 @@ JOINT_LIMITS = {
 
 COMMANDS = ("calibrate", "teleoperate", "record", "replay")
 
+# Extra tries for a servo that has not replied in time.
+RETRIES = 3
 
-def _without_gripper(bus: FeetechMotorsBus) -> FeetechMotorsBus:
+
+class _PatientBus(FeetechMotorsBus):
+    """Asks a servo again when its reply is late, instead of failing at once.
+
+    LeRobot waits about 50 ms for a reply and by default asks once. On this rig
+    a reply normally takes 1 ms, but with the camera streaming it now and then
+    takes 40 to 80 ms, which stopped ``lerobot-record`` while it was connecting.
+    Asking again is safe: the same register gets the same value.
+    """
+
+    def read(self, data_name, motor, *, normalize=True, num_retry=0):
+        return super().read(
+            data_name, motor, normalize=normalize, num_retry=max(num_retry, RETRIES)
+        )
+
+    def write(self, data_name, motor, value, *, normalize=True, num_retry=0):
+        super().write(
+            data_name, motor, value, normalize=normalize, num_retry=max(num_retry, RETRIES)
+        )
+
+    def sync_read(self, data_name, motors=None, *, normalize=True, num_retry=0):
+        return super().sync_read(
+            data_name, motors, normalize=normalize, num_retry=max(num_retry, RETRIES)
+        )
+
+
+def _without_gripper(bus: FeetechMotorsBus) -> _PatientBus:
     motors = {name: motor for name, motor in bus.motors.items() if name != "gripper"}
-    return FeetechMotorsBus(port=bus.port, motors=motors, calibration=bus.calibration)
+    return _PatientBus(port=bus.port, motors=motors, calibration=bus.calibration)
 
 
 class SO101FiveMotorFollower(SOFollower):

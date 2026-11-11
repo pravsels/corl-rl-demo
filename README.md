@@ -99,7 +99,11 @@ uv run lerobot-5motor record "${FOLLOWER[@]}" "${LEADER[@]}" "$TOP" \
     --dataset.num_episodes=50 --dataset.episode_time_s=15 --dataset.reset_time_s=5
 ```
 
-Check it by replaying an episode on the arm:
+A run that stops before its first episode is saved leaves an empty dataset
+folder behind, and the next run refuses to reuse it. Delete it first:
+`rm -r ~/.cache/huggingface/lerobot/${HF_USER}/corl-press-green`.
+
+Check the recording by replaying an episode on the arm:
 
 ```bash
 uv run lerobot-5motor replay "${FOLLOWER[@]}" \

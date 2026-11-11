@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
+import scservo_sdk as scs
 from lerobot.cameras.opencv import OpenCVCameraConfig
 from lerobot.datasets.feature_utils import combine_feature_dicts
 from lerobot.datasets.pipeline_features import (
@@ -144,6 +145,69 @@ def test_configure_gives_every_joint_full_joint_limits(tmp_path):
         written = {m: (v, off) for r, m, v, off in robot.bus.writes if r == register}
         # Torque must be off, or the servo will not store the value.
         assert written == {joint: (wanted, True) for joint in JOINTS}, register
+
+
+class LatePackets:
+    """Stands in for the servo link: the first ``late`` writes get no reply in time."""
+
+    def __init__(self, late):
+        self.late = late
+        self.tries = 0
+
+    def writeTxRx(self, port, motor_id, address, length, data):  # noqa: N802 (the SDK's name)
+        self.tries += 1
+        return (scs.COMM_RX_TIMEOUT if self.tries <= self.late else scs.COMM_SUCCESS), 0
+
+    def getTxRxResult(self, comm):  # noqa: N802
+        return "[TxRxResult] There is no status packet!"
+
+
+def open_bus(robot):
+    robot.bus.port_handler.is_open = True  # no port: the fakes below answer instead
+    return robot.bus
+
+
+@pytest.mark.parametrize("arm", [follower, leader])
+def test_a_write_whose_reply_is_late_is_tried_again(tmp_path, arm):
+    # Seen on the rig: with the camera streaming, a reply can take over 50 ms.
+    bus = open_bus(arm(tmp_path))
+    bus.packet_handler = LatePackets(late=2)
+
+    bus.write("Lock", "shoulder_pan", 0)
+
+    assert bus.packet_handler.tries == 3
+
+
+def test_torque_is_switched_through_the_same_retries(tmp_path):
+    # LeRobot's torque helpers ask for no retries; one late reply must not stop a connect.
+    bus = open_bus(follower(tmp_path))
+    bus.packet_handler = LatePackets(late=1)
+
+    bus.disable_torque("shoulder_pan")
+
+    assert bus.packet_handler.tries == 3  # Torque_Enable twice, Lock once
+
+
+def test_a_servo_that_never_replies_still_fails(tmp_path):
+    bus = open_bus(follower(tmp_path))
+    bus.packet_handler = LatePackets(late=1000)
+
+    with pytest.raises(ConnectionError, match="no status packet"):
+        bus.write("Lock", "shoulder_pan", 0)
+
+    assert bus.packet_handler.tries < 20
+
+
+def test_a_joint_read_whose_reply_is_late_is_tried_again(tmp_path):
+    bus = open_bus(follower(tmp_path))
+    results = [scs.COMM_RX_TIMEOUT, scs.COMM_SUCCESS]
+    bus.sync_reader.txRxPacket = lambda: results.pop(0)
+    bus.sync_reader.getData = lambda motor_id, address, length: 2000 + motor_id
+
+    positions = bus.sync_read("Present_Position", normalize=False)
+
+    assert positions == {joint: 2001 + i for i, joint in enumerate(JOINTS)}
+    assert results == []
 
 
 def test_launcher_rejects_a_command_it_does_not_wrap(monkeypatch):
