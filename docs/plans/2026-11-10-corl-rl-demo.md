@@ -1,6 +1,6 @@
 # CoRL workshop demo: an SO-101 that gets better at pressing a button
 
-Date: 2026-11-10. Status: steps 1-2 done.
+Date: 2026-11-10. Status: steps 1-2 done, step 3 started.
 
 ## Goal
 
@@ -12,7 +12,10 @@ success rate and time-to-press improving. Everything runs on one MacBook Air
 ## Rig
 
 - SO-101 follower arm, plus a leader arm for recording demos.
-- Top camera on a pole. Wrist camera once it is wired.
+- Top camera on a pole: OpenCV index 0 on the Mac, recorded at 320x240, 30 fps.
+  That mode is 4:3 and crops the sides of the camera's 16:9 view, so aim the
+  camera with `rig-check`'s saved frame, not with a 16:9 preview. Wrist camera
+  once it is wired.
 - Four-button module on USB serial. It reports which buttons are down, once a
   second and at once on any change. D2 is green, D3 red, D4 yellow, D5 white.
 - Arm, module and camera pole fixed to one board, so the geometry is the same
@@ -38,7 +41,10 @@ success rate and time-to-press improving. Everything runs on one MacBook Air
    demos contain. Demos recorded with the top camera only give a top-only
    policy; adding the wrist camera later means recording again.
 7. **Offline at the venue.** Weights and dependencies are cached beforehand.
-   Logs and plots stay local.
+   Logs and plots stay local. Checked so far with downloads blocked (not yet in
+   airplane mode, which is step 8): ACT builds from the cached ResNet-18
+   weights and a 320x240 forward pass takes about 10 ms on the Mac's GPU;
+   recording and reading back a video dataset works.
 8. **Pins.** Python 3.12, `lerobot[feetech]==0.5.1`.
 
 ## Steps
@@ -50,7 +56,8 @@ Each step ends with a check. Stop for review after each one.
    shows up, a quick tap is not missed, and we have written down which pin is
    which colour.
 3. **Rig.** Mount everything on the board, calibrate the arms, define the start
-   pose. Check: teleoperation works and every camera we plan to use shows up.
+   pose. Check: `rig-check` passes, teleoperation works and every camera we
+   plan to use shows up.
 4. **Demos.** Record 40-50, with varied start poses and a few with the module
    shifted 1-2 cm. Check: replaying one episode presses green.
 5. **Base policy.** Train ACT on a cloud GPU. Run 20 rollouts per candidate

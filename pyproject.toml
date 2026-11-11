@@ -12,6 +12,7 @@ dependencies = [
 
 [project.scripts]
 button-monitor = "corl_rl_demo.buttons:main"
+rig-check = "corl_rl_demo.rig:main"
 
 [dependency-groups]
 dev = ["pytest>=8"]

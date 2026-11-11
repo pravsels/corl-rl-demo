@@ -29,3 +29,25 @@ It prints each press and release with its arrival time, and on Ctrl-C the
 number of presses and the shortest hold per pin. On our module D2 is green, D3
 red, D4 yellow and D5 white; if yours differs, change `COLOURS` and `GREEN` in
 `src/corl_rl_demo/buttons.py`.
+
+## Rig check
+
+```bash
+uv run rig-check
+```
+
+It checks that the button module, the arm's six motors and the top camera all
+answer, and saves a camera frame to `outputs/rig_check_top.png` so you can see
+what the policy will see. It only reads: it never enables torque or moves the
+arm. Ports and the camera index are set at the top of `src/corl_rl_demo/rig.py`
+and can be overridden with flags (`uv run rig-check --help`).
+
+## Calibration
+
+Each arm is calibrated once per machine. LeRobot asks you to hold the arm in the
+middle of its range, then sweep every joint through its full range:
+
+```bash
+uv run lerobot-calibrate --robot.type=so101_follower \
+    --robot.port=/dev/cu.usbmodem5AB01584891 --robot.id=demo_follower
+```
