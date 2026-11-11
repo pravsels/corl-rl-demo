@@ -22,6 +22,8 @@ success rate and time-to-press improving. Everything runs on one MacBook Air
   second and at once on any change. D2 is green, D3 red, D4 yellow, D5 white.
 - Arm, module and camera pole fixed to one board, so the geometry is the same
   in the hotel and at the venue.
+- Arm calibration files are committed under `calibration/`, so any machine with
+  the repo drives the same arms without calibrating again.
 
 ## Design choices
 

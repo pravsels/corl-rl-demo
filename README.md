@@ -67,13 +67,19 @@ TOP='--robot.cameras={top: {type: opencv, index_or_path: 0, width: 320, height: 
 
 ### 1. Calibrate
 
-Once per arm per machine. LeRobot asks you to hold the arm in the middle of its
-range, then sweep every joint through its full range:
+Once per arm. LeRobot asks you to hold the arm in the middle of its range, then
+sweep every joint through its full range:
 
 ```bash
 uv run lerobot-5motor calibrate "${FOLLOWER[@]}"
 uv run lerobot-5motor calibrate "${LEADER[@]}"
 ```
+
+The results are saved in this repo, as `calibration/follower/demo_follower.json`
+and `calibration/leader/demo_leader.json`. Commit them: another machine that
+pulls the repo then drives the same two arms without calibrating again. The
+files belong to these arms. With different arms, or after recalibrating, the
+servos and the files disagree and LeRobot asks which to keep.
 
 ### 2. Teleoperate
 

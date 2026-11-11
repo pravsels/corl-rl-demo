@@ -1,5 +1,6 @@
 import sys
 from contextlib import contextmanager
+from pathlib import Path
 
 import pytest
 from lerobot.cameras.opencv import OpenCVCameraConfig
@@ -88,6 +89,15 @@ def test_lerobot_builds_both_arms_from_their_type_names(tmp_path):
     )
     assert type(make_robot_from_config(robot_config)) is SO101FiveMotorFollower
     assert type(make_teleoperator_from_config(teleop_config)) is SO101FiveMotorLeader
+
+
+def test_calibration_files_live_in_the_repo_unless_told_otherwise(tmp_path):
+    repo = Path(__file__).resolve().parents[1]
+    assert (
+        SO101FiveMotorFollowerConfig(port=PORT).calibration_dir == repo / "calibration/follower"
+    )
+    assert SO101FiveMotorLeaderConfig(port=PORT).calibration_dir == repo / "calibration/leader"
+    assert follower(tmp_path).calibration_fpath == tmp_path / "test.json"
 
 
 def test_calibration_is_kept_apart_from_a_six_motor_arm():
