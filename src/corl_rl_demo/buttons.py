@@ -17,6 +17,7 @@ import argparse
 import re
 import threading
 import time
+from collections.abc import Callable
 from typing import Protocol
 
 BAUD = 9600
@@ -44,12 +45,17 @@ class PressLatch:
         self._down: dict[str, bool] = {}
         self._presses: list[str] = []
 
-    def update(self, down: dict[str, bool]) -> None:
+    def update(self, down: dict[str, bool]) -> list[tuple[str, bool]]:
+        """Take in one reading. Returns the pins that changed, as (pin, is_down)."""
+        changes = []
         with self._lock:
             for pin, is_down in down.items():
-                if is_down and not self._down.get(pin, False) and pin not in self._presses:
-                    self._presses.append(pin)
+                if is_down != self._down.get(pin, False):
+                    changes.append((pin, is_down))
+                    if is_down and pin not in self._presses:
+                        self._presses.append(pin)
                 self._down[pin] = is_down
+        return changes
 
     def begin_episode(self) -> None:
         with self._lock:
@@ -76,10 +82,18 @@ class ButtonModule:
     ``seconds_since_reading`` is how the caller tells a quiet module from an
     unplugged one: the module reports every second, so several seconds of
     silence means there is no reward signal and rollouts should pause.
+
+    ``on_change(pin, is_down, when)`` is called on the reader thread for every
+    change, with the ``time.monotonic()`` at which its line arrived.
     """
 
-    def __init__(self, stream: _Stream) -> None:
+    def __init__(
+        self,
+        stream: _Stream,
+        on_change: Callable[[str, bool, float], None] | None = None,
+    ) -> None:
         self._stream = stream
+        self._on_change = on_change
         self.latch = PressLatch()
         # Until the first state line, silence is counted from now.
         self._last_reading = time.monotonic()
@@ -88,12 +102,17 @@ class ButtonModule:
         self._thread.start()
 
     @classmethod
-    def open(cls, port: str, baud: int = BAUD) -> "ButtonModule":
+    def open(
+        cls,
+        port: str,
+        baud: int = BAUD,
+        on_change: Callable[[str, bool, float], None] | None = None,
+    ) -> "ButtonModule":
         import serial
 
         # Opening the port resets the module's microcontroller; it reports again
         # about two seconds later.
-        return cls(serial.Serial(port, baud, timeout=0.5))
+        return cls(serial.Serial(port, baud, timeout=0.5), on_change)
 
     def _read(self) -> None:
         while not self._stop.is_set():
@@ -103,8 +122,12 @@ class ButtonModule:
                 return
             down = parse_line(raw.decode("ascii", "replace").strip())
             if down is not None:
-                self.latch.update(down)
-                self._last_reading = time.monotonic()
+                now = time.monotonic()
+                changes = self.latch.update(down)
+                self._last_reading = now
+                if self._on_change is not None:
+                    for pin, is_down in changes:
+                        self._on_change(pin, is_down, now)
 
     def seconds_since_reading(self) -> float:
         """Seconds since the last state line, or since opening if there was none."""
@@ -122,6 +145,43 @@ class ButtonModule:
         self.close()
 
 
+class TapReport:
+    """Prints each press and release as it arrives, and tallies them per pin.
+
+    The tally answers the tap question: tap a button five times, and it should
+    show five presses with holds well under the one-second report interval.
+    """
+
+    def __init__(self, start: float, echo: Callable[[str], None] = print) -> None:
+        self._start = start
+        self._echo = echo
+        self._pressed_at: dict[str, float] = {}
+        self._count: dict[str, int] = {}
+        self._shortest: dict[str, float] = {}
+
+    def __call__(self, pin: str, is_down: bool, when: float) -> None:
+        stamp = f"{when - self._start:7.2f} s  {pin}"
+        if is_down:
+            self._pressed_at[pin] = when
+            self._count[pin] = self._count.get(pin, 0) + 1
+            self._echo(f"{stamp} pressed")
+        elif pin in self._pressed_at:
+            held = when - self._pressed_at.pop(pin)
+            self._shortest[pin] = min(held, self._shortest.get(pin, held))
+            self._echo(f"{stamp} released after {held:.2f} s")
+
+    def summary(self) -> list[str]:
+        lines = []
+        for pin in sorted(self._count):
+            count = self._count[pin]
+            presses = f"{count} press{'' if count == 1 else 'es'}"
+            if pin in self._shortest:
+                lines.append(f"{pin}: {presses}, shortest hold {self._shortest[pin]:.2f} s")
+            else:
+                lines.append(f"{pin}: {presses}, still down")
+        return lines
+
+
 def main(argv: list[str] | None = None) -> None:
     """Print each press and release. Use it to find which pin is which colour."""
     parser = argparse.ArgumentParser(description=main.__doc__)
@@ -129,26 +189,25 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--seconds", type=float, help="stop after this long (default: Ctrl-C)")
     args = parser.parse_args(argv)
 
-    with ButtonModule.open(args.port) as module:
-        print(f"listening on {args.port}; press buttons (Ctrl-C to stop)")
-        deadline = None if args.seconds is None else time.monotonic() + args.seconds
-        previous: dict[str, bool] = {}
+    start = time.monotonic()
+    report = TapReport(start, echo=lambda line: print(line, flush=True))
+    with ButtonModule.open(args.port, on_change=report) as module:
+        print(f"listening on {args.port}; press buttons (Ctrl-C to stop)", flush=True)
+        deadline = None if args.seconds is None else start + args.seconds
         warned = False
         try:
             while deadline is None or time.monotonic() < deadline:
-                time.sleep(0.02)
-                down = module.latch.down()
-                for pin in sorted(down):
-                    if down[pin] != previous.get(pin, False):
-                        print(f"{pin} {'pressed' if down[pin] else 'released'}")
-                previous = down
+                time.sleep(0.1)
                 silent = module.seconds_since_reading() > 5.0
                 if silent and not warned:
                     print("no state line for 5 s: wrong port, or the module is unplugged")
                 warned = silent
         except KeyboardInterrupt:
             pass
-        print(f"pins seen: {', '.join(sorted(previous)) or 'none'}")
+        pins = sorted(module.latch.down())
+    print(f"\npins seen: {', '.join(pins) or 'none'}")
+    for line in report.summary():
+        print(line)
 
 
 if __name__ == "__main__":

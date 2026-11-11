@@ -25,4 +25,6 @@ The four-button module is the reward signal. Find its serial port
 uv run button-monitor --port /dev/cu.usbserial-110
 ```
 
-It prints each press and release, which is how you find the pin for each colour.
+It prints each press and release with its arrival time, which is how you find
+the pin for each colour. On Ctrl-C it prints the number of presses and the
+shortest hold per pin, which is how you check that quick taps are not missed.
