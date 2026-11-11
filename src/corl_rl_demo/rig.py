@@ -76,6 +76,40 @@ def check_arm(port: str) -> str:
     return summary
 
 
+def watch_arm(port: str, interval: float = 1.0) -> None:
+    """Ping each motor once a second and print who answers, until Ctrl-C.
+
+    For finding a bad cable: the motors are chained, so everything past a break
+    goes silent. ``garbled`` means bytes came back that were not a valid reply,
+    which points at the data line itself (a pinched or shorted cable) or at low
+    supply voltage. Wiggle or unplug cables and watch the line change.
+    """
+    import scservo_sdk as scs
+
+    handler = scs.PortHandler(port)
+    packets = scs.PacketHandler(0)
+    if not handler.openPort():
+        raise CheckFailed(f"cannot open {port}")
+    handler.setBaudRate(1_000_000)
+    try:
+        while True:
+            cells = []
+            for motor_id, name in enumerate(JOINTS, start=1):
+                _, result, _ = packets.ping(handler, motor_id)
+                if result == scs.COMM_SUCCESS:
+                    volts, result, _ = packets.read1ByteTxRx(handler, motor_id, 62)
+                    state = f"ok {volts / 10:.1f}V" if result == scs.COMM_SUCCESS else "ok"
+                else:
+                    state = "silent" if result == scs.COMM_RX_TIMEOUT else "garbled"
+                cells.append(f"{motor_id} {name}: {state}")
+            print(" | ".join(cells), flush=True)
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        handler.closePort()
+
+
 def check_camera(index: int, frame_path: Path) -> str:
     import cv2
     from lerobot.cameras.opencv import OpenCVCamera, OpenCVCameraConfig
@@ -116,7 +150,17 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--button-port", default=BUTTON_PORT)
     parser.add_argument("--top-camera", type=int, default=TOP_CAMERA, help="OpenCV index")
     parser.add_argument("--frame", type=Path, default=Path("outputs/rig_check_top.png"))
+    parser.add_argument(
+        "--watch-arm", action="store_true", help="only ping the motors, once a second"
+    )
     args = parser.parse_args(argv)
+
+    if args.watch_arm:
+        try:
+            watch_arm(args.arm_port)
+        except CheckFailed as error:
+            sys.exit(f"FAIL  arm: {error}")
+        return
 
     def buttons() -> str:
         if not Path(args.button_port).exists():
