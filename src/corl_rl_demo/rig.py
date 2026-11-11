@@ -7,21 +7,24 @@ is safe to run at any time: after plugging things in, and first thing at the ven
 from __future__ import annotations
 
 import argparse
+import glob
 import sys
 import time
 from pathlib import Path
 
 from corl_rl_demo.buttons import COLOURS, ButtonModule
 
-# macOS names the arm's port after its adapter's serial number, so it is stable.
+# macOS names an arm's port after its adapter's serial number, so it is stable.
+ARM_PORT = "/dev/cu.usbmodem5AB01584891"  # the follower
+LEADER_PORT = "/dev/cu.usbmodem5AE60838491"
 # The button module's adapter has no serial number: its name follows the USB
-# socket it is plugged into, and changes if it moves to another one.
-ARM_PORT = "/dev/cu.usbmodem5AB01584891"
-BUTTON_PORT = "/dev/cu.usbserial-110"
+# socket it is plugged into (-110 in one, -1120 in another), so it is found.
+BUTTON_PORTS = "/dev/cu.usbserial-*"
 
-# OpenCV index of the top camera. macOS renumbers cameras when one comes or goes
-# (an iPhone acting as a Continuity Camera counts), so look at the saved frame.
-TOP_CAMERA = 0
+# OpenCV index of each camera. macOS renumbers cameras when one comes or goes
+# (the laptop's own camera and an iPhone acting as a Continuity Camera count),
+# so look at the saved frames.
+CAMERAS = {"top": 1, "wrist": 0}
 CAMERA_WIDTH, CAMERA_HEIGHT, CAMERA_FPS = 320, 240, 30
 
 # Motor IDs 1 to 5, in this order. The arm has no gripper motor (see five_motor.py).
@@ -31,6 +34,21 @@ HOT_C = 55
 
 class CheckFailed(Exception):
     """One part of the rig did not answer as expected. The message says what to do."""
+
+
+def pick_button_port(ports: list[str]) -> str:
+    """The button module's port, given the USB serial adapters that are present."""
+    if not ports:
+        raise CheckFailed(f"no {BUTTON_PORTS} port: is the button module plugged in?")
+    if len(ports) > 1:
+        raise CheckFailed(
+            f"several USB serial adapters ({', '.join(ports)}): pick one with --button-port"
+        )
+    return ports[0]
+
+
+def button_port() -> str:
+    return pick_button_port(sorted(glob.glob(BUTTON_PORTS)))
 
 
 def check_buttons(module: ButtonModule, wait: float = 4.0) -> str:
@@ -114,7 +132,7 @@ def watch_arm(port: str, interval: float = 1.0) -> None:
         handler.closePort()
 
 
-def check_camera(index: int, frame_path: Path) -> str:
+def check_camera(name: str, index: int, frame_path: Path) -> str:
     import cv2
     from lerobot.cameras.opencv import OpenCVCamera, OpenCVCameraConfig
 
@@ -144,18 +162,20 @@ def check_camera(index: int, frame_path: Path) -> str:
     summary = f"{frame.shape[1]}x{frame.shape[0]} at {fps:.0f} fps"
     if fps < 0.8 * CAMERA_FPS:
         raise CheckFailed(f"{summary}, wanted {CAMERA_FPS}")
-    return f"{summary}; look at {frame_path} to confirm it is the top view"
+    return f"{summary}; look at {frame_path} to confirm it is the {name} view"
 
 
 def main(argv: list[str] | None = None) -> None:
-    """Check that the button module, the arm and the top camera all answer."""
+    """Check that the button module, the arms and both cameras all answer."""
     parser = argparse.ArgumentParser(description=main.__doc__)
-    parser.add_argument("--arm-port", default=ARM_PORT)
-    parser.add_argument("--button-port", default=BUTTON_PORT)
-    parser.add_argument("--top-camera", type=int, default=TOP_CAMERA, help="OpenCV index")
-    parser.add_argument("--frame", type=Path, default=Path("outputs/rig_check_top.png"))
+    parser.add_argument("--arm-port", default=ARM_PORT, help="the follower")
+    parser.add_argument("--leader-port", default=LEADER_PORT)
+    parser.add_argument("--button-port", help=f"default: the one {BUTTON_PORTS} present")
+    for name, index in CAMERAS.items():
+        parser.add_argument(f"--{name}-camera", type=int, default=index, help="OpenCV index")
+    parser.add_argument("--frames", type=Path, default=Path("outputs"), help="where frames go")
     parser.add_argument(
-        "--watch-arm", action="store_true", help="only ping the motors, once a second"
+        "--watch-arm", action="store_true", help="only ping the follower's motors, once a second"
     )
     args = parser.parse_args(argv)
 
@@ -167,16 +187,25 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     def buttons() -> str:
-        if not Path(args.button_port).exists():
-            raise CheckFailed(f"{args.button_port} not found: unplugged, or in a different socket")
-        with ButtonModule.open(args.button_port) as module:
-            return check_buttons(module)
+        port = args.button_port or button_port()
+        if not Path(port).exists():
+            raise CheckFailed(f"{port} not found: unplugged, or in a different socket")
+        with ButtonModule.open(port) as module:
+            return f"{check_buttons(module)}, on {port}"
 
-    checks = {
-        "buttons": buttons,
-        "arm": lambda: check_arm(args.arm_port),
-        "top camera": lambda: check_camera(args.top_camera, args.frame),
-    }
+    checks = {"buttons": buttons, "follower": lambda: check_arm(args.arm_port)}
+    # The leader is only needed to record demos, so its absence is not a failure.
+    if Path(args.leader_port).exists():
+        checks["leader"] = lambda: check_arm(args.leader_port)
+    else:
+        print("skip  leader: not plugged in (only needed to record demos)", flush=True)
+    for name in CAMERAS:
+        index = getattr(args, f"{name}_camera")
+        frame = args.frames / f"rig_check_{name}.png"
+        checks[f"{name} camera"] = lambda name=name, index=index, frame=frame: check_camera(
+            name, index, frame
+        )
+
     failed = False
     for name, check in checks.items():
         try:

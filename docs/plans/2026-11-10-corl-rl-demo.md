@@ -14,10 +14,11 @@ success rate and time-to-press improving. Everything runs on one MacBook Air
 - SO-101 follower arm, plus a leader arm for recording demos. The follower runs
   on five motors: its gripper motor now drives a joint whose own motor failed,
   and the jaw is fixed shut.
-- Top camera on a pole: OpenCV index 0 on the Mac, recorded at 320x240, 30 fps.
-  That mode is 4:3 and crops the sides of the camera's 16:9 view, so aim the
-  camera with `rig-check`'s saved frame, not with a 16:9 preview. Wrist camera
-  once it is wired.
+- Top camera on a pole and a wrist camera on the arm, both recorded at 320x240,
+  30 fps. That mode is 4:3 and crops the sides of the top camera's 16:9 view, so
+  aim it with `rig-check`'s saved frame, not with a 16:9 preview. macOS
+  renumbers cameras when one comes or goes: the wrist camera is OpenCV index 0
+  and the top camera index 1 for now, and `rig-check` saves a frame from each.
 - Four-button module on USB serial. It reports which buttons are down, once a
   second and at once on any change. D2 is green, D3 red, D4 yellow, D5 white.
 - Arm, module and camera pole fixed to one board, so the geometry is the same
@@ -41,9 +42,10 @@ success rate and time-to-press improving. Everything runs on one MacBook Air
    drawn from a small range.
 5. **Fallback base: a fixed reference trajectory.** Built from the demos, no
    camera. Same learner, selected by a flag, for when venue lighting breaks ACT.
-6. **The camera set is fixed before recording.** ACT's inputs are whatever the
-   demos contain. Demos recorded with the top camera only give a top-only
-   policy; adding the wrist camera later means recording again.
+6. **The camera set is fixed before recording: top and wrist.** ACT's inputs are
+   whatever the demos contain, so changing the cameras later means recording
+   again. The top camera alone loses the buttons behind the arm at the moment
+   of the press.
 7. **Offline at the venue.** Weights and dependencies are cached beforehand.
    Logs and plots stay local. Checked so far with downloads blocked (not yet in
    airplane mode, which is step 8): ACT builds from the cached ResNet-18
@@ -99,6 +101,5 @@ Each step ends with a check. Stop for review after each one.
 
 ## Open questions
 
-- Wrist camera, or top only? Must be settled before step 4.
 - When does the workshop start? That sets how many of steps 6-8 we can afford.
 - Where do we train ACT?

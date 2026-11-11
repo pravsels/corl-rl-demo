@@ -36,11 +36,14 @@ red, D4 yellow and D5 white; if yours differs, change `COLOURS` and `GREEN` in
 uv run rig-check
 ```
 
-It checks that the button module, the arm's five motors and the top camera all
-answer, and saves a camera frame to `outputs/rig_check_top.png` so you can see
-what the policy will see. It only reads: it never enables torque or moves the
-arm. Ports and the camera index are set at the top of `src/corl_rl_demo/rig.py`
-and can be overridden with flags (`uv run rig-check --help`).
+It checks that the button module, the follower's five motors, the leader (if it
+is plugged in) and both cameras all answer. It saves a frame from each camera,
+`outputs/rig_check_top.png` and `outputs/rig_check_wrist.png`, so you can see
+what the policy will see. Look at them: macOS renumbers cameras when one comes
+or goes, and the two views are easy to swap. It only reads: it never enables
+torque or moves an arm. Ports and camera indices are set at the top of
+`src/corl_rl_demo/rig.py` and can be overridden with flags
+(`uv run rig-check --help`). The button module's port is found by itself.
 
 ## A five-motor arm
 
@@ -59,11 +62,12 @@ The commands below share these options:
 
 ```bash
 FOLLOWER=(--robot.type=so101_5motor_follower --robot.port=/dev/cu.usbmodem5AB01584891 --robot.id=demo_follower)
-LEADER=(--teleop.type=so101_5motor_leader --teleop.port=/dev/cu.usbmodemXXXX --teleop.id=demo_leader)
-TOP='--robot.cameras={top: {type: opencv, index_or_path: 0, width: 320, height: 240, fps: 30}}'
+LEADER=(--teleop.type=so101_5motor_leader --teleop.port=/dev/cu.usbmodem5AE60838491 --teleop.id=demo_leader)
+CAMERAS='--robot.cameras={top: {type: opencv, index_or_path: 1, width: 320, height: 240, fps: 30}, wrist: {type: opencv, index_or_path: 0, width: 320, height: 240, fps: 30}}'
 ```
 
-`uv run lerobot-find-port` finds the leader's port.
+The camera indices are the ones `rig-check` confirmed. `uv run lerobot-find-port`
+finds an arm's port.
 
 ### 1. Calibrate
 
@@ -86,7 +90,7 @@ servos and the files disagree and LeRobot asks which to keep.
 ### 2. Teleoperate
 
 ```bash
-uv run lerobot-5motor teleoperate "${FOLLOWER[@]}" "${LEADER[@]}" "$TOP" --display_data=true
+uv run lerobot-5motor teleoperate "${FOLLOWER[@]}" "${LEADER[@]}" "$CAMERAS" --display_data=true
 ```
 
 ### 3. Record demos to the Hugging Face Hub
@@ -95,7 +99,7 @@ Log in once with `uv run hf auth login`, and set `HF_USER` to your Hub name.
 The dataset is uploaded when recording ends.
 
 ```bash
-uv run lerobot-5motor record "${FOLLOWER[@]}" "${LEADER[@]}" "$TOP" \
+uv run lerobot-5motor record "${FOLLOWER[@]}" "${LEADER[@]}" "$CAMERAS" \
     --dataset.repo_id=${HF_USER}/corl-press-green \
     --dataset.single_task="Press the green button" \
     --dataset.num_episodes=50 --dataset.episode_time_s=15 --dataset.reset_time_s=5
@@ -132,7 +136,7 @@ on disk, which is what the venue needs. LeRobot wants the dataset name to start
 with `eval_`.
 
 ```bash
-uv run lerobot-5motor record "${FOLLOWER[@]}" "$TOP" \
+uv run lerobot-5motor record "${FOLLOWER[@]}" "$CAMERAS" \
     --policy.path=${HF_USER}/act-corl-press-green \
     --dataset.repo_id=${HF_USER}/eval_corl-press-green \
     --dataset.single_task="Press the green button" \
