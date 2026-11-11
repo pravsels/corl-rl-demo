@@ -68,7 +68,9 @@ TOP='--robot.cameras={top: {type: opencv, index_or_path: 0, width: 320, height: 
 ### 1. Calibrate
 
 Once per arm. LeRobot asks you to hold the arm in the middle of its range, then
-sweep every joint through its full range:
+sweep the four joints it lists through their full range. Push each one to both
+hard stops: a joint's angle is measured from the middle of what you swept, so a
+short sweep leaves the follower tens of degrees off the leader.
 
 ```bash
 uv run lerobot-5motor calibrate "${FOLLOWER[@]}"
