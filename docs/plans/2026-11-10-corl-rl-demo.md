@@ -1,6 +1,6 @@
 # CoRL workshop demo: an SO-101 that gets better at pressing a button
 
-Date: 2026-11-10. Status: draft, steps 1-2 started.
+Date: 2026-11-10. Status: steps 1-2 done.
 
 ## Goal
 
@@ -13,7 +13,8 @@ success rate and time-to-press improving. Everything runs on one MacBook Air
 
 - SO-101 follower arm, plus a leader arm for recording demos.
 - Top camera on a pole. Wrist camera once it is wired.
-- Four-button module on USB serial. It reports which buttons are down.
+- Four-button module on USB serial. It reports which buttons are down, once a
+  second and at once on any change. D2 is green, D3 red, D4 yellow, D5 white.
 - Arm, module and camera pole fixed to one board, so the geometry is the same
   in the hotel and at the venue.
 
@@ -68,8 +69,9 @@ Each step ends with a check. Stop for review after each one.
 - **Servos overheat over a full day.** Read temperatures and pause between
   episodes when they climb.
 - **The module slides when pressed.** The board fixes this (step 3).
-- **Quick taps missed.** The module reports once a second for certain; whether
-  it also reports on every change is checked in step 2.
+- **Quick taps missed.** Checked in step 2: the module reports on change, and
+  finger taps of 0.12-0.16 s all registered (one per button). It debounces for
+  50 ms, so the arm must hold the button down longer than that.
 
 ## Open questions
 

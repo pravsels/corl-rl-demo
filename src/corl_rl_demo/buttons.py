@@ -1,11 +1,13 @@
 """Reads the four-button module over USB serial. This is the reward signal.
 
-The module prints a state line at 9600 baud, at least once a second:
+The module prints a state line at 9600 baud once a second, and at once whenever
+a button changes:
 
     Button States: D2=1 D3=1 D4=1 D5=1
 
 Its inputs use pull-ups, so 0 means the button is down. Other lines (the startup
-banner, the ``buttons_module`` heartbeat) are ignored.
+banner, the ``buttons_module`` heartbeat) are ignored. The module debounces for
+50 ms, so a contact shorter than that may not be reported.
 
 A press is over long before a control loop looks again, so presses are latched
 as they arrive and kept until the next episode begins.
@@ -21,6 +23,9 @@ from collections.abc import Callable
 from typing import Protocol
 
 BAUD = 9600
+# Found by pressing each button on this module (2026-11-10).
+COLOURS = {"D2": "green", "D3": "red", "D4": "yellow", "D5": "white"}
+GREEN = "D2"
 _PREFIX = "Button States:"
 _PIN = re.compile(r"(D\d+)=([01])")
 
@@ -145,6 +150,10 @@ class ButtonModule:
         self.close()
 
 
+def _label(pin: str) -> str:
+    return f"{pin} ({COLOURS[pin]})" if pin in COLOURS else pin
+
+
 class TapReport:
     """Prints each press and release as it arrives, and tallies them per pin.
 
@@ -160,7 +169,7 @@ class TapReport:
         self._shortest: dict[str, float] = {}
 
     def __call__(self, pin: str, is_down: bool, when: float) -> None:
-        stamp = f"{when - self._start:7.2f} s  {pin}"
+        stamp = f"{when - self._start:7.2f} s  {_label(pin)}"
         if is_down:
             self._pressed_at[pin] = when
             self._count[pin] = self._count.get(pin, 0) + 1
@@ -176,14 +185,14 @@ class TapReport:
             count = self._count[pin]
             presses = f"{count} press{'' if count == 1 else 'es'}"
             if pin in self._shortest:
-                lines.append(f"{pin}: {presses}, shortest hold {self._shortest[pin]:.2f} s")
+                lines.append(f"{_label(pin)}: {presses}, shortest hold {self._shortest[pin]:.2f} s")
             else:
-                lines.append(f"{pin}: {presses}, still down")
+                lines.append(f"{_label(pin)}: {presses}, still down")
         return lines
 
 
 def main(argv: list[str] | None = None) -> None:
-    """Print each press and release. Use it to find which pin is which colour."""
+    """Print each press and release, to check the module and its pin colours."""
     parser = argparse.ArgumentParser(description=main.__doc__)
     parser.add_argument("--port", required=True, help="e.g. /dev/cu.usbserial-110")
     parser.add_argument("--seconds", type=float, help="stop after this long (default: Ctrl-C)")

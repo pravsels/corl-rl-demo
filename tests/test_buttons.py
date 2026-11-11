@@ -1,6 +1,6 @@
 import time
 
-from corl_rl_demo.buttons import ButtonModule, PressLatch, TapReport, parse_line
+from corl_rl_demo.buttons import COLOURS, GREEN, ButtonModule, PressLatch, TapReport, parse_line
 
 # Lines captured from the module.
 BANNER = [
@@ -50,6 +50,11 @@ def test_button_held_at_episode_start_is_not_a_press():
     latch.update(parse_line(IDLE))
     latch.update(parse_line(D4_DOWN))
     assert latch.presses() == ("D4",)
+
+
+def test_green_is_one_of_the_four_pins_the_module_reports():
+    assert set(COLOURS) == set(parse_line(IDLE))
+    assert COLOURS[GREEN] == "green"
 
 
 def test_update_returns_the_pins_that_changed():
@@ -109,8 +114,8 @@ def test_tap_report_counts_presses_and_times_the_shortest_hold():
     report("D4", False, 102.1)
     report("D2", True, 103.0)
     assert report.summary() == [
-        "D2: 1 press, still down",
-        "D4: 2 presses, shortest hold 0.10 s",
+        "D2 (green): 1 press, still down",
+        "D4 (yellow): 2 presses, shortest hold 0.10 s",
     ]
 
 

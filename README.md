@@ -25,6 +25,7 @@ The four-button module is the reward signal. Find its serial port
 uv run button-monitor --port /dev/cu.usbserial-110
 ```
 
-It prints each press and release with its arrival time, which is how you find
-the pin for each colour. On Ctrl-C it prints the number of presses and the
-shortest hold per pin, which is how you check that quick taps are not missed.
+It prints each press and release with its arrival time, and on Ctrl-C the
+number of presses and the shortest hold per pin. On our module D2 is green, D3
+red, D4 yellow and D5 white; if yours differs, change `COLOURS` and `GREEN` in
+`src/corl_rl_demo/buttons.py`.
