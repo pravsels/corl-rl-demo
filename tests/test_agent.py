@@ -443,7 +443,7 @@ def test_stretch_follows_the_same_path_more_slowly():
 def test_learner_waits_for_warmup_episodes():
     import time
     sac = SAC(SACConfig(obs_dim=2, action_dim=1, batch_size=4), seed=0)
-    learner = LearnerThread(sac, utd=1, warmup_episodes=3)
+    learner = LearnerThread(sac, utd=1, warmup_episodes=3, learn_every=1)
     learner.start()
     try:
         for episode in range(3):
@@ -529,3 +529,38 @@ def test_cool_down_rests_limp_at_home_then_wakes():
     cool_down(arm, np.zeros(len(JOINTS)), LoopConfig(), poll_s=0)
     assert arm.events[0] == "unlock" and arm.events[-2:] == ["limp", "wake"]
     assert "move" in arm.events and np.allclose(arm.at, 0)
+
+
+def test_learner_learns_every_two_episodes():
+    import time
+    sac = SAC(SACConfig(obs_dim=2, action_dim=1, batch_size=4), seed=0)
+    learner = LearnerThread(sac, utd=1, warmup_episodes=1, learn_every=2)
+    learner.start()
+
+    def episode(n):
+        for _ in range(n):
+            sac.buffer.add(np.zeros(2), np.zeros(1), 0.0, np.zeros(2), False)
+            learner.transitions_added()
+        return learner.episode_ended()
+
+    def settle(target):
+        deadline = time.monotonic() + 10
+        while sac.steps < target and time.monotonic() < deadline:
+            time.sleep(0.05)
+        time.sleep(0.2)
+
+    try:
+        assert not episode(4)
+        time.sleep(0.3)
+        assert sac.steps == 0
+        assert episode(4)
+        settle(8)
+        assert sac.steps == 8
+        assert not episode(3)
+        time.sleep(0.3)
+        assert sac.steps == 8
+        assert episode(3)
+        settle(14)
+        assert sac.steps == 14
+    finally:
+        learner.stop()

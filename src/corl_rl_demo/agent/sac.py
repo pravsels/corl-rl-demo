@@ -213,15 +213,19 @@ class SAC:
 
 
 class LearnerThread(threading.Thread):
-    """Runs ``utd`` updates per new transition in the background and publishes
-    the actor every ``publish_every`` updates. Updates wait until ``warmup_episodes``
-    episodes have ended (``episode_ended``), then catch up on everything owed."""
+    """Learns in the background in rounds: every ``learn_every`` episodes (once
+    ``warmup_episodes`` have ended) it runs ``utd`` updates per transition those
+    episodes added, while the next episodes play, then publishes the actor. It
+    also publishes every ``publish_every`` updates within a round."""
 
-    def __init__(self, sac: SAC, *, utd: int = 4, warmup_episodes: int = 1, publish_every: int = 50) -> None:
+    def __init__(self, sac: SAC, *, utd: int = 4, warmup_episodes: int = 1, learn_every: int = 2,
+                 publish_every: int = 50) -> None:
         super().__init__(daemon=True)
-        self.sac, self.utd, self.warmup_episodes, self.publish_every = sac, utd, warmup_episodes, publish_every
+        self.sac, self.utd, self.publish_every = sac, utd, publish_every
+        self.warmup_episodes, self.learn_every = warmup_episodes, max(1, learn_every)
         self.episodes = 0
-        self._owed = 0
+        self._owed = 0  # updates for transitions not yet released to a round
+        self._budget = 0  # updates released to the current round
         self._cv = threading.Condition()
         self._stop_event = threading.Event()
         self.last: dict[str, float] = {}
@@ -229,16 +233,25 @@ class LearnerThread(threading.Thread):
     def transitions_added(self, n: int = 1) -> None:
         with self._cv:
             self._owed += n * self.utd
-            self._cv.notify()
 
-    def episode_ended(self) -> None:
+    def episode_ended(self) -> bool:
+        """Count an episode; True when it starts a learning round."""
         with self._cv:
             self.episodes += 1
+            if self.warming_up or self.episodes % self.learn_every:
+                return False
+            self._budget += self._owed
+            self._owed = 0
             self._cv.notify()
+            return self._budget > 0
 
     @property
     def warming_up(self) -> bool:
         return self.episodes < self.warmup_episodes
+
+    @property
+    def learning(self) -> bool:
+        return self._budget > 0
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -248,13 +261,13 @@ class LearnerThread(threading.Thread):
     def run(self) -> None:
         while not self._stop_event.is_set():
             with self._cv:
-                while not self._stop_event.is_set() and (
-                    self._owed <= 0 or self.warming_up
-                ):
+                while not self._stop_event.is_set() and self._budget <= 0:
                     self._cv.wait(timeout=0.5)
                 if self._stop_event.is_set():
                     return
-                self._owed -= 1
             self.last = self.sac.update()
-            if self.sac.steps % self.publish_every == 0:
+            with self._cv:
+                self._budget -= 1
+                done = self._budget <= 0
+            if done or self.sac.steps % self.publish_every == 0:
                 self.sac.publish()
