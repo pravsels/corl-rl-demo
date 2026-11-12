@@ -1,7 +1,8 @@
-"""Live success-rate graph for an rl-agent run, in the browser.
+"""Live success-rate graph of the latest rl-agent run, in the browser.
 
-Serves a page on localhost that re-reads the run's episodes.jsonl every 2 s, so it
-follows a run while the arm works. No extra packages.
+Serves a page on localhost that re-reads the run folder's episodes.jsonl every 2 s
+and shows only the newest run: when `rl-agent run` starts again, the graph starts
+over. No extra packages.
 
     .venv/bin/python scripts/success_graph.py outputs/rl/dsrl-clean
 """
@@ -43,7 +44,7 @@ border-radius:8px;padding:8px 10px;font-size:12px;box-shadow:0 4px 14px rgba(0,0
 .bar{display:flex;height:22px;border-radius:6px;overflow:hidden;gap:2px;margin-top:4px}
 .bar div{min-width:2px}
 </style></head><body><main>
-<h1>Success rate</h1><p class="sub" id="sub"></p>
+<h1>Success rate, latest run</h1><p class="sub" id="sub"></p>
 <div class="tiles" id="tiles"></div>
 <div class="card"><h2>Success rate (moving average over the last <span id="win"></span> episodes)</h2>
 <div class="legend">
@@ -52,7 +53,6 @@ border-radius:8px;padding:8px 10px;font-size:12px;box-shadow:0 4px 14px rgba(0,0
 <span><svg width="10" height="10"><rect x="1" y="1" width="8" height="8" fill="var(--critical)"/></svg>Safety stop</span>
 <span><svg width="10" height="10"><path d="M5 1 L9 9 L1 9Z" fill="var(--warning)"/></svg>Timeout or wrong button</span>
 <span><svg width="10" height="10"><circle cx="5" cy="5" r="3.5" fill="none" stroke="var(--ink2)" stroke-width="1.5"/></svg>Eval episode</span>
-<span><svg width="12" height="10"><line x1="6" y1="0" x2="6" y2="10" stroke="var(--muted)" stroke-dasharray="2 2"/></svg>New run</span>
 </div><div id="chart"></div></div>
 <div class="card"><h2>Outcomes</h2><div id="mix"></div></div>
 </main><div id="tip"></div>
@@ -65,15 +65,14 @@ const label={success:'Success',safety:'Safety stop',timeout:'Timeout',wrong_butt
 const pct=x=>x==null?'–':Math.round(x*100)+'%';
 function draw(rows){
   const n=rows.length;
-  document.getElementById('sub').textContent=`${RUN} · ${n} episodes · refreshes every 2 s`;
+  document.getElementById('sub').textContent=`${RUN} · ${n} episode${n===1?'':'s'} · refreshes every 2 s`;
   const train=rows.filter(r=>!r.eval), ok=r=>r.outcome==='success';
-  const lastW=train.slice(-WIN), runs=[]; rows.forEach((r,i)=>{if(i===0||r.episode<=rows[i-1].episode)runs.push(i)});
-  const curRun=rows.slice(runs[runs.length-1]||0);
+  const lastW=train.slice(-WIN);
   const tiles=[
     ['Last '+WIN, pct(lastW.length?lastW.filter(ok).length/lastW.length:null), `${lastW.filter(ok).length}/${lastW.length} succeeded`],
-    ['This run', pct(curRun.length?curRun.filter(ok).length/curRun.length:null), `${curRun.filter(ok).length}/${curRun.length} succeeded`],
-    ['All', pct(n?rows.filter(ok).length/n:null), `${rows.filter(ok).length}/${n} succeeded`],
-    ['Safety stops', rows.filter(r=>r.outcome==='safety').length, `of ${n} episodes`],
+    ['This run', pct(n?rows.filter(ok).length/n:null), `${rows.filter(ok).length}/${n} succeeded`],
+    ['Started', n?new Date(rows[0].time).toLocaleTimeString('en-GB'):'–', n?`last episode ${new Date(rows[n-1].time).toLocaleTimeString('en-GB')}`:''],
+    ['Safety stops', rows.filter(r=>r.outcome==='safety').length, `of ${n} episode${n===1?'':'s'}`],
   ];
   document.getElementById('tiles').innerHTML=tiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="s">${t[2]}</div></div>`).join('');
   const W=1040,H=300,L=40,R=12,T=12,B=30,pw=W-L-R,ph=H-T-B;
@@ -82,7 +81,6 @@ function draw(rows){
   for(const v of [0,.25,.5,.75,1])g+=`<line class="gridline" x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L-6}" y="${y(v)+4}" text-anchor="end">${v*100}%</text>`;
   const step=Math.max(1,Math.ceil(n/12));
   for(let i=0;i<n;i+=step)g+=`<text x="${x(i)}" y="${H-8}" text-anchor="middle">${i+1}</text>`;
-  runs.slice(1).forEach(i=>{const xx=(x(i)+x(i-1))/2;g+=`<line x1="${xx}" x2="${xx}" y1="${T}" y2="${T+ph}" stroke="var(--muted)" stroke-dasharray="3 3"/>`});
   const rate=rows.map((r,i)=>{const w=rows.slice(0,i+1).filter(q=>!q.eval).slice(-WIN);return w.length?w.filter(ok).length/w.length:0});
   if(n>1)g+=`<polyline fill="none" stroke="var(--series)" stroke-width="2" stroke-linejoin="round" points="${rate.map((v,i)=>x(i)+','+y(v)).join(' ')}"/>`;
   rows.forEach((r,i)=>{const cx=x(i),cy=r.outcome==='success'?y(1):y(0),c=`var(--${kind(r.outcome)})`,s=`stroke="var(--surface)" stroke-width="2"`;
@@ -97,7 +95,7 @@ function draw(rows){
   hit.onmousemove=e=>{if(!n)return;const p=svg.createSVGPoint();p.x=e.clientX;p.y=e.clientY;const q=p.matrixTransform(svg.getScreenCTM().inverse());
     const i=Math.max(0,Math.min(n-1,Math.round((q.x-L)/pw*(n-1))));const r=rows[i];
     cross.setAttribute('x1',x(i));cross.setAttribute('x2',x(i));cross.setAttribute('visibility','visible');
-    tip.innerHTML=`<b>#${i+1}</b> (run episode ${r.episode}${r.eval?', eval':''}) · ${r.time.slice(11,19)}<br>Outcome: <b>${label[r.outcome]||r.outcome}</b>${r.time_to_press_s?` · ${r.time_to_press_s} s`:''}<br>Moving average: <b>${pct(rate[i])}</b>${r.reason?`<br>${r.reason}`:''}<br>Moved up to ${r.moved_max_deg}° · ${r.learner_updates} updates`;
+    tip.innerHTML=`<b>#${i+1}</b> ${r.eval?'(eval) ':''}· ${new Date(r.time).toLocaleTimeString('en-GB')}<br>Outcome: <b>${label[r.outcome]||r.outcome}</b>${r.time_to_press_s?` · ${r.time_to_press_s} s`:''}<br>Moving average: <b>${pct(rate[i])}</b>${r.reason?`<br>${r.reason}`:''}<br>Moved up to ${r.moved_max_deg}° · ${r.learner_updates} updates`;
     tip.style.display='block';tip.style.left=Math.min(e.clientX+14,innerWidth-280)+'px';tip.style.top=(e.clientY+14)+'px'};
   hit.onmouseleave=()=>{tip.style.display='none';cross.setAttribute('visibility','hidden')};
   const counts={};rows.forEach(r=>counts[r.outcome]=(counts[r.outcome]||0)+1);
@@ -128,6 +126,8 @@ def main() -> None:
                         except json.JSONDecodeError:
                             continue
                         row.pop("trace", None)
+                        if rows and row.get("episode", 0) <= rows[-1].get("episode", 0):
+                            rows = []  # episode numbers restart: a new run
                         rows.append(row)
                 body, kind = json.dumps(rows).encode(), "application/json"
             else:
