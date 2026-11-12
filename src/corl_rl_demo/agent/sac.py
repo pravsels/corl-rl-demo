@@ -216,7 +216,7 @@ class LearnerThread(threading.Thread):
     """Runs ``utd`` updates per new transition in the background and publishes
     the actor every ``publish_every`` updates."""
 
-    def __init__(self, sac: SAC, *, utd: int = 4, warmup: int = 256, publish_every: int = 50) -> None:
+    def __init__(self, sac: SAC, *, utd: int = 4, warmup: int = 1, publish_every: int = 50) -> None:
         super().__init__(daemon=True)
         self.sac, self.utd, self.warmup, self.publish_every = sac, utd, warmup, publish_every
         self._owed = 0

@@ -298,7 +298,7 @@ def run(args: argparse.Namespace) -> None:
     warm = arm.observe()
     method.goals(method.decide(warm, joints(warm), 0.0), np.zeros(method.action_dim))
     print(f"[agent] policy warmed up in {time.monotonic() - started:.1f} s", flush=True)
-    learner = LearnerThread(sac, utd=args.utd) if learning else None
+    learner = LearnerThread(sac, utd=args.utd, warmup=args.warmup) if learning else None
     if learner is not None:
         learner.start()
     keys = Keys(arm)
@@ -466,6 +466,8 @@ def main(argv: list[str] | None = None) -> None:
     run_parser.add_argument("--steps-per-decision", type=int, default=10)
     run_parser.add_argument("--exploration", type=float, default=1.0, help="scale of SAC's std; 0 runs its mean")
     run_parser.add_argument("--utd", type=int, default=4, help="SAC updates per transition")
+    run_parser.add_argument("--warmup", type=int, default=1,
+                            help="transitions in the buffer before SAC starts updating")
     run_parser.add_argument("--device", default=None, help="base policy device (default mps)")
     run_parser.add_argument("--seed", type=int, default=0)
     run_parser.add_argument("--dry-run", action="store_true",
