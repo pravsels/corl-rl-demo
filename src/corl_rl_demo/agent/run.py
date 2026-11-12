@@ -48,7 +48,7 @@ class LoopConfig:
     speed_scale: float = 1.0  # < 1 follows each plan's path more slowly (0.5: half speed)
     episodes: int = 1000
     start_jitter_deg: float = 3.0
-    reset_lift_deg: float = -60.0  # shoulder_lift to raise the arm to before going home
+    reset_lift_deg: float = -45.0  # shoulder_lift to raise the arm to before going home
     exploration: float = 1.0  # scales SAC's std; 0 runs its mean
     eval_every: int = 10
     save_every: int = 10
@@ -480,7 +480,7 @@ def main(argv: list[str] | None = None) -> None:
     run_parser.add_argument("--episodes", type=int, default=1000)
     run_parser.add_argument("--speed-scale", type=float, default=1.0,
                             help="follow each plan's path at this fraction of its speed (0.5: half)")
-    run_parser.add_argument("--reset-lift", type=float, default=-60.0,
+    run_parser.add_argument("--reset-lift", type=float, default=-45.0,
                             help="shoulder_lift (deg) the arm rises to before going home; lower is higher")
     run_parser.add_argument("--episode-timeout", type=float, default=15.0,
                             help="seconds without a press before an episode fails")
