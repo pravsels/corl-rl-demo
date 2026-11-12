@@ -25,5 +25,5 @@ echo "checkpoint $CHECKPOINT, $EPISODES episodes"
 exec .venv/bin/rl-agent run --method dsrl-flow --policy "$CHECKPOINT" \
   --arm-port /dev/cu.wchusbserial5AB01584891 --button-port /dev/cu.wchusbserial1120 \
   --top-camera 1 --wrist-camera 0 --no-learn --base-noise "${NOISE:-episode}" \
-  --steps-per-decision 30 --episodes "$EPISODES" --episode-timeout "${TIMEOUT:-45}" \
+  --steps-per-decision 30 --episodes "$EPISODES" --blocks 1 --episode-timeout "${TIMEOUT:-45}" \
   --run-dir "outputs/try/$NAME" "$@"

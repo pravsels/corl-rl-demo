@@ -126,8 +126,9 @@ def main() -> None:
                         except json.JSONDecodeError:
                             continue
                         row.pop("trace", None)
-                        if rows and row.get("episode", 0) <= rows[-1].get("episode", 0):
-                            rows = []  # episode numbers restart: a new run
+                        if rows and (row.get("run", "") != rows[-1].get("run", "") if "run" in row
+                                     else row.get("episode", 0) <= rows[-1].get("episode", 0)):
+                            rows = []  # a new rl-agent run
                         rows.append(row)
                 body, kind = json.dumps(rows).encode(), "application/json"
             else:

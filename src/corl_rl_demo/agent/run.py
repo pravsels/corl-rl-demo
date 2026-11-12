@@ -347,8 +347,21 @@ def run(args: argparse.Namespace) -> None:
     rng = np.random.default_rng(loop.seed)
     log = (run_dir / "episodes.jsonl").open("a")
     recent: list[bool] = []
+    run_started = datetime.now(UTC).isoformat()
+    block = 1
     try:
-        for index in range(1, loop.episodes + 1):
+        def numbers():
+            nonlocal block
+            block = 0
+            while args.blocks <= 0 or block < args.blocks:
+                block += 1
+                if block > 1:
+                    if learning:
+                        torch.save(sac.state_dict(), checkpoint)
+                    print(f"[agent] block {block}: another {loop.episodes} episodes (q quits)", flush=True)
+                yield from range(1, loop.episodes + 1)
+
+        for index in numbers():
             if keys.quit.is_set():
                 break
             while keys.pause.is_set() and not keys.quit.is_set():
@@ -373,7 +386,7 @@ def run(args: argparse.Namespace) -> None:
             if not evaluating:
                 recent = (recent + [result["success"]])[-20:]
             record = {
-                "episode": index, "time": datetime.now(UTC).isoformat(), "method": args.method,
+                "run": run_started, "block": block, "episode": index, "time": datetime.now(UTC).isoformat(), "method": args.method,
                 "eval": evaluating, **result, "learner_updates": sac.steps,
                 "transitions": sac.buffer.size, "learning": learning, "dry_run": args.dry_run,
                 **({f"sac_{k}": v for k, v in learner.last.items()} if learner else {}),
@@ -505,7 +518,9 @@ def main(argv: list[str] | None = None) -> None:
     run_parser.add_argument("--wrist-camera", type=int, default=1)
     run_parser.add_argument("--run-dir", default="outputs/rl")
     run_parser.add_argument("--resume", action="store_true")
-    run_parser.add_argument("--episodes", type=int, default=1000)
+    run_parser.add_argument("--episodes", type=int, default=30, help="episodes per block")
+    run_parser.add_argument("--blocks", type=int, default=0,
+                            help="blocks of --episodes to run; 0 (default) repeats until q")
     run_parser.add_argument("--speed-scale", type=float, default=1.0,
                             help="follow each plan's path at this fraction of its speed (0.5: half)")
     run_parser.add_argument("--reset-lift", type=float, default=-45.0,

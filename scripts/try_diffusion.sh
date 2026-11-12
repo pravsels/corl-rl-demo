@@ -24,5 +24,5 @@ echo "checkpoint $POLICY, $EPISODES episodes"
 exec .venv/bin/rl-agent run --method dsrl-diffusion --policy "$POLICY" \
   --arm-port /dev/cu.wchusbserial5AB01584891 --button-port /dev/cu.wchusbserial1120 \
   --top-camera 1 --wrist-camera 0 --no-learn --base-noise "${NOISE:-random}" \
-  --episodes "$EPISODES" --episode-timeout "${TIMEOUT:-45}" \
+  --episodes "$EPISODES" --blocks 1 --episode-timeout "${TIMEOUT:-45}" \
   --run-dir "outputs/try/${RUN:-diffusion-clean}-$(basename "$(dirname "$POLICY")")" "$@"
