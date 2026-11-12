@@ -15,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 PAGE = r"""<!doctype html>
-<html lang="ko"><head><meta charset="utf-8">
+<html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Success Rate</title>
 <style>
@@ -24,7 +24,7 @@ PAGE = r"""<!doctype html>
 @media (prefers-color-scheme:dark){:root{--page:#0d0d0d;--surface:#1a1a19;--ink:#f0efec;--ink2:#c3c2b7;
 --muted:#8f8e86;--grid:#2c2c2a;--series:#3987e5}}
 *{box-sizing:border-box}body{margin:0;background:var(--page);color:var(--ink);
-font:14px/1.4 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif}
+font:14px/1.4 -apple-system,BlinkMacSystemFont,sans-serif}
 main{max-width:1100px;margin:0 auto;padding:20px 16px}
 h1{font-size:18px;margin:0 0 4px}.sub{color:var(--ink2);margin:0 0 16px;font-size:13px}
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
@@ -43,37 +43,37 @@ border-radius:8px;padding:8px 10px;font-size:12px;box-shadow:0 4px 14px rgba(0,0
 .bar{display:flex;height:22px;border-radius:6px;overflow:hidden;gap:2px;margin-top:4px}
 .bar div{min-width:2px}
 </style></head><body><main>
-<h1>성공률</h1><p class="sub" id="sub"></p>
+<h1>Success rate</h1><p class="sub" id="sub"></p>
 <div class="tiles" id="tiles"></div>
-<div class="card"><h2>성공률 (최근 <span id="win"></span>개 에피소드 이동 평균)</h2>
+<div class="card"><h2>Success rate (moving average over the last <span id="win"></span> episodes)</h2>
 <div class="legend">
-<span><svg width="22" height="10"><line x1="0" y1="5" x2="22" y2="5" stroke="var(--series)" stroke-width="2"/></svg>이동 평균</span>
-<span><svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="var(--good)"/></svg>성공</span>
-<span><svg width="10" height="10"><rect x="1" y="1" width="8" height="8" fill="var(--critical)"/></svg>안전 정지</span>
-<span><svg width="10" height="10"><path d="M5 1 L9 9 L1 9Z" fill="var(--warning)"/></svg>시간 초과·다른 버튼</span>
-<span><svg width="10" height="10"><circle cx="5" cy="5" r="3.5" fill="none" stroke="var(--ink2)" stroke-width="1.5"/></svg>평가 에피소드</span>
-<span><svg width="12" height="10"><line x1="6" y1="0" x2="6" y2="10" stroke="var(--muted)" stroke-dasharray="2 2"/></svg>새 실행</span>
+<span><svg width="22" height="10"><line x1="0" y1="5" x2="22" y2="5" stroke="var(--series)" stroke-width="2"/></svg>Moving average</span>
+<span><svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="var(--good)"/></svg>Success</span>
+<span><svg width="10" height="10"><rect x="1" y="1" width="8" height="8" fill="var(--critical)"/></svg>Safety stop</span>
+<span><svg width="10" height="10"><path d="M5 1 L9 9 L1 9Z" fill="var(--warning)"/></svg>Timeout or wrong button</span>
+<span><svg width="10" height="10"><circle cx="5" cy="5" r="3.5" fill="none" stroke="var(--ink2)" stroke-width="1.5"/></svg>Eval episode</span>
+<span><svg width="12" height="10"><line x1="6" y1="0" x2="6" y2="10" stroke="var(--muted)" stroke-dasharray="2 2"/></svg>New run</span>
 </div><div id="chart"></div></div>
-<div class="card"><h2>결과 구성</h2><div id="mix"></div></div>
+<div class="card"><h2>Outcomes</h2><div id="mix"></div></div>
 </main><div id="tip"></div>
 <script>
 const WIN=10, tip=document.getElementById('tip');
 document.getElementById('win').textContent=WIN;
 const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const kind=o=>o==='success'?'good':o==='safety'?'critical':'warning';
-const label={success:'성공',safety:'안전 정지',timeout:'시간 초과',wrong_button:'다른 버튼'};
+const label={success:'Success',safety:'Safety stop',timeout:'Timeout',wrong_button:'Wrong button'};
 const pct=x=>x==null?'–':Math.round(x*100)+'%';
 function draw(rows){
   const n=rows.length;
-  document.getElementById('sub').textContent=`${RUN} · 에피소드 ${n}개 · 2초마다 갱신`;
+  document.getElementById('sub').textContent=`${RUN} · ${n} episodes · refreshes every 2 s`;
   const train=rows.filter(r=>!r.eval), ok=r=>r.outcome==='success';
   const lastW=train.slice(-WIN), runs=[]; rows.forEach((r,i)=>{if(i===0||r.episode<=rows[i-1].episode)runs.push(i)});
   const curRun=rows.slice(runs[runs.length-1]||0);
   const tiles=[
-    ['최근 '+WIN+'개', pct(lastW.length?lastW.filter(ok).length/lastW.length:null), `${lastW.filter(ok).length}/${lastW.length} 성공`],
-    ['이번 실행', pct(curRun.length?curRun.filter(ok).length/curRun.length:null), `${curRun.filter(ok).length}/${curRun.length} 성공`],
-    ['전체', pct(n?rows.filter(ok).length/n:null), `${rows.filter(ok).length}/${n} 성공`],
-    ['안전 정지', rows.filter(r=>r.outcome==='safety').length, '전체 에피소드 중'],
+    ['Last '+WIN, pct(lastW.length?lastW.filter(ok).length/lastW.length:null), `${lastW.filter(ok).length}/${lastW.length} succeeded`],
+    ['This run', pct(curRun.length?curRun.filter(ok).length/curRun.length:null), `${curRun.filter(ok).length}/${curRun.length} succeeded`],
+    ['All', pct(n?rows.filter(ok).length/n:null), `${rows.filter(ok).length}/${n} succeeded`],
+    ['Safety stops', rows.filter(r=>r.outcome==='safety').length, `of ${n} episodes`],
   ];
   document.getElementById('tiles').innerHTML=tiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="s">${t[2]}</div></div>`).join('');
   const W=1040,H=300,L=40,R=12,T=12,B=30,pw=W-L-R,ph=H-T-B;
@@ -92,17 +92,17 @@ function draw(rows){
     if(r.eval)g+=`<circle cx="${cx}" cy="${cy}" r="8" fill="none" stroke="var(--ink2)" stroke-width="1.5"/>`;
   });
   g+=`<line id="cross" y1="${T}" y2="${T+ph}" stroke="var(--ink2)" stroke-width="1" visibility="hidden"/><rect id="hit" x="${L}" y="${T}" width="${pw}" height="${ph}" fill="transparent"/>`;
-  document.getElementById('chart').innerHTML=`<svg viewBox="0 0 ${W} ${H}" class="axis" role="img" aria-label="에피소드별 성공률">${g}</svg>`;
+  document.getElementById('chart').innerHTML=`<svg viewBox="0 0 ${W} ${H}" class="axis" role="img" aria-label="Success rate by episode">${g}</svg>`;
   const svg=document.querySelector('#chart svg'),hit=svg.querySelector('#hit'),cross=svg.querySelector('#cross');
   hit.onmousemove=e=>{if(!n)return;const p=svg.createSVGPoint();p.x=e.clientX;p.y=e.clientY;const q=p.matrixTransform(svg.getScreenCTM().inverse());
     const i=Math.max(0,Math.min(n-1,Math.round((q.x-L)/pw*(n-1))));const r=rows[i];
     cross.setAttribute('x1',x(i));cross.setAttribute('x2',x(i));cross.setAttribute('visibility','visible');
-    tip.innerHTML=`<b>#${i+1}</b> (실행 내 ${r.episode}번${r.eval?', 평가':''}) · ${r.time.slice(11,19)}<br>결과: <b>${label[r.outcome]||r.outcome}</b>${r.time_to_press_s?` · ${r.time_to_press_s} s`:''}<br>이동 평균: <b>${pct(rate[i])}</b>${r.reason?`<br>${r.reason}`:''}<br>최대 이동 ${r.moved_max_deg}° · 업데이트 ${r.learner_updates}`;
+    tip.innerHTML=`<b>#${i+1}</b> (run episode ${r.episode}${r.eval?', eval':''}) · ${r.time.slice(11,19)}<br>Outcome: <b>${label[r.outcome]||r.outcome}</b>${r.time_to_press_s?` · ${r.time_to_press_s} s`:''}<br>Moving average: <b>${pct(rate[i])}</b>${r.reason?`<br>${r.reason}`:''}<br>Moved up to ${r.moved_max_deg}° · ${r.learner_updates} updates`;
     tip.style.display='block';tip.style.left=Math.min(e.clientX+14,innerWidth-280)+'px';tip.style.top=(e.clientY+14)+'px'};
   hit.onmouseleave=()=>{tip.style.display='none';cross.setAttribute('visibility','hidden')};
   const counts={};rows.forEach(r=>counts[r.outcome]=(counts[r.outcome]||0)+1);
   const order=['success','timeout','wrong_button','safety'].filter(k=>counts[k]);
-  document.getElementById('mix').innerHTML=n?`<div class="legend">${order.map(k=>`<span>${label[k]} ${counts[k]} (${pct(counts[k]/n)})</span>`).join('')}</div><div class="bar">${order.map(k=>`<div style="flex:${counts[k]};background:var(--${kind(k)})" title="${label[k]} ${counts[k]}"></div>`).join('')}</div>`:'아직 에피소드가 없어요';
+  document.getElementById('mix').innerHTML=n?`<div class="legend">${order.map(k=>`<span>${label[k]} ${counts[k]} (${pct(counts[k]/n)})</span>`).join('')}</div><div class="bar">${order.map(k=>`<div style="flex:${counts[k]};background:var(--${kind(k)})" title="${label[k]} ${counts[k]}"></div>`).join('')}</div>`:'No episodes yet';
 }
 async function tick(){try{const r=await fetch('episodes',{cache:'no-store'});draw(await r.json())}catch(e){}}
 tick();setInterval(tick,2000);
