@@ -135,5 +135,39 @@ uv run lerobot-5motor record "${FOLLOWER[@]}" "$TOP" \
 
 ### 6. Online RL
 
-Not built yet (step 6 of the plan). It will drive the same
-`SO101FiveMotorFollower` class from Python.
+`rl-agent` learns on the rig while it runs, on the laptop. Three methods, one
+loop (`src/corl_rl_demo/agent/`):
+
+- `dsrl-diffusion`: LeRobot's Diffusion Policy, frozen, with SAC choosing the
+  noise its denoiser starts from (DSRL).
+- `dsrl-flow`: the same with a small flow policy (`rl-agent flow-train`).
+- `residual-act`: ACT, frozen, plus a SAC correction of up to 5° per joint.
+
+```bash
+uv run rl-agent limits --dataset pravsels/corl-press-green   # joint box and start pose from the demos
+uv run lerobot-train --dataset.repo_id=pravsels/corl-press-green --dataset.video_backend=pyav \
+    --dataset.image_transforms.enable=true --policy.type=diffusion --policy.device=mps \
+    --policy.resize_shape='[120,160]' --policy.crop_ratio=0.9 --policy.down_dims='[256,512,1024]' \
+    --policy.noise_scheduler_type=DDIM --policy.num_inference_steps=10 --policy.push_to_hub=false \
+    --output_dir=outputs/train/diffusion-corl-press-green --steps=10000 --save_freq=1000 --batch_size=16
+scripts/try_diffusion.sh 4000 3 --speed-scale 0.5   # one checkpoint on the arm, no learning
+uv run rl-agent run --method dsrl-diffusion --policy <pretrained_model dir> --exploration 3
+```
+
+The base policy alone runs with `--no-learn --base-noise random`
+(`scripts/try_diffusion.sh`, `scripts/try_flow.sh`); `--dry-run` keeps torque
+off and commands nothing. `--speed-scale 0.5` follows each plan at half speed.
+
+Safety, from the outside in: goals are clipped to the demos' joint range plus 3°
+and to 10° ahead of the arm; a commanded speed over 150°/s, acceleration over
+2500°/s², or current over 280 counts for 3 ticks holds the arm and ends the
+episode with a penalty; above 45 °C the run rests between episodes and at 50 °C
+it stops; the servos are capped at 70 % torque, 180°/s and a gentler
+acceleration (RAM registers, reset by a power cycle). Plans are smoothed over 5
+ticks and cross-faded into each other.
+
+Reward follows the plan: +1 when green is pressed first, a failure for another
+button or the timeout (`--episode-timeout`, 15 s), a small cost per decision.
+Every tenth episode runs SAC's mean action. Episodes, with a per-plan trace, are
+logged to `<run dir>/episodes.jsonl`; `--resume` continues a run. Keys: space
+stops the arm, `p` pauses, `q` quits.

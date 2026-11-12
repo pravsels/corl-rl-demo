@@ -14,6 +14,7 @@ dependencies = [
 button-monitor = "corl_rl_demo.buttons:main"
 rig-check = "corl_rl_demo.rig:main"
 lerobot-5motor = "corl_rl_demo.five_motor:main"
+rl-agent = "corl_rl_demo.agent.run:main"
 
 [dependency-groups]
 dev = ["pytest>=8"]
