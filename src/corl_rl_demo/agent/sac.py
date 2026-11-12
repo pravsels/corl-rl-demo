@@ -213,16 +213,17 @@ class SAC:
 
 
 class LearnerThread(threading.Thread):
-    """Learns in the background in rounds: every ``learn_every`` episodes (once
-    ``warmup_episodes`` have ended) it runs ``utd`` updates per transition those
-    episodes added, while the next episodes play, then publishes the actor. It
-    also publishes every ``publish_every`` updates within a round."""
+    """Runs ``utd`` updates per transition in the background, once
+    ``warmup_episodes`` have ended. With ``learn_every`` 0 it learns as transitions
+    arrive; with N > 0 it learns in rounds, every N episodes, from what those
+    episodes added. It publishes the actor every ``publish_every`` updates and when
+    it runs out of work."""
 
-    def __init__(self, sac: SAC, *, utd: int = 4, warmup_episodes: int = 1, learn_every: int = 2,
+    def __init__(self, sac: SAC, *, utd: int = 4, warmup_episodes: int = 1, learn_every: int = 0,
                  publish_every: int = 50) -> None:
         super().__init__(daemon=True)
         self.sac, self.utd, self.publish_every = sac, utd, publish_every
-        self.warmup_episodes, self.learn_every = warmup_episodes, max(1, learn_every)
+        self.warmup_episodes, self.learn_every = warmup_episodes, max(0, learn_every)
         self.episodes = 0
         self._owed = 0  # updates for transitions not yet released to a round
         self._budget = 0  # updates released to the current round
@@ -233,16 +234,26 @@ class LearnerThread(threading.Thread):
     def transitions_added(self, n: int = 1) -> None:
         with self._cv:
             self._owed += n * self.utd
+            if not self.learn_every and not self.warming_up:
+                self._release()
+
+    def _release(self) -> None:
+        self._budget += self._owed
+        self._owed = 0
+        self._cv.notify()
 
     def episode_ended(self) -> bool:
         """Count an episode; True when it starts a learning round."""
         with self._cv:
             self.episodes += 1
-            if self.warming_up or self.episodes % self.learn_every:
+            if self.warming_up:
                 return False
-            self._budget += self._owed
-            self._owed = 0
-            self._cv.notify()
+            if not self.learn_every:
+                self._release()  # what the warm-up held back
+                return False
+            if self.episodes % self.learn_every:
+                return False
+            self._release()
             return self._budget > 0
 
     @property

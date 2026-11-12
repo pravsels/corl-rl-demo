@@ -395,7 +395,7 @@ def run(args: argparse.Namespace) -> None:
             log.flush()
             print(f"[agent] episode {index}{' (eval)' if evaluating else ''}: {result['outcome']}"
                   f"{'' if result.get('time_to_press_s') is None else f' in {result['time_to_press_s']} s'}"
-                  f"{f' (SAC learns every {learner.learn_every} episodes)' if learner and learner.episodes < learner.learn_every else ''}"
+                  f"{f' (SAC starts after {learner.warmup_episodes} episodes)' if learner and learner.warming_up else ''}"
                   f"; last {len(recent)}: {sum(recent)}/{len(recent)}; {sac.steps} updates; "
                   f"peak current {result['peak_current']}, hottest {result['hottest_c']:.0f} C\n"
                   f"        policy asked up to {result['asked_ahead_max_deg']} deg ahead, sent "
@@ -530,8 +530,8 @@ def main(argv: list[str] | None = None) -> None:
     run_parser.add_argument("--steps-per-decision", type=int, default=10)
     run_parser.add_argument("--exploration", type=float, default=1.0, help="scale of SAC's std; 0 runs its mean")
     run_parser.add_argument("--utd", type=int, default=4, help="SAC updates per transition")
-    run_parser.add_argument("--learn-every", type=int, default=2,
-                            help="SAC learns from what the last N episodes added, every N episodes")
+    run_parser.add_argument("--learn-every", type=int, default=0,
+                            help="0 (default): SAC learns as transitions arrive; N: in rounds, every N episodes")
     run_parser.add_argument("--warmup-episodes", type=int, default=1,
                             help="episodes to collect before SAC starts updating")
     run_parser.add_argument("--device", default=None, help="base policy device (default mps)")

@@ -443,7 +443,7 @@ def test_stretch_follows_the_same_path_more_slowly():
 def test_learner_waits_for_warmup_episodes():
     import time
     sac = SAC(SACConfig(obs_dim=2, action_dim=1, batch_size=4), seed=0)
-    learner = LearnerThread(sac, utd=1, warmup_episodes=3, learn_every=1)
+    learner = LearnerThread(sac, utd=1, warmup_episodes=3)
     learner.start()
     try:
         for episode in range(3):
