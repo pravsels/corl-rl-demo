@@ -459,3 +459,27 @@ def test_learner_waits_for_warmup_episodes():
         assert sac.steps == 12
     finally:
         learner.stop()
+
+
+def test_go_home_lifts_before_returning():
+    from corl_rl_demo.agent.run import go_home
+
+    class Arm:
+        def __init__(self):
+            self.at, self.moves = np.array([30.0, -13.0, 19.0, 78.0, 28.0]), []
+
+        def positions(self):
+            return self.at.copy()
+
+        def move_to(self, target):
+            self.moves.append(np.asarray(target, dtype=float))
+            self.at = self.moves[-1]
+
+    arm = Arm()
+    home = np.array([-5.6, -102.6, 96.5, 76.4, 10.8])
+    go_home(arm, home, -60.0)
+    assert np.allclose(arm.moves[0], [30.0, -60.0, 19.0, 78.0, 28.0])
+    assert np.allclose(arm.moves[1], home)
+    arm.moves.clear()
+    go_home(arm, home, -60.0)
+    assert len(arm.moves) == 1

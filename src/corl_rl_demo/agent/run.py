@@ -48,6 +48,7 @@ class LoopConfig:
     speed_scale: float = 1.0  # < 1 follows each plan's path more slowly (0.5: half speed)
     episodes: int = 1000
     start_jitter_deg: float = 3.0
+    reset_lift_deg: float = -60.0  # shoulder_lift to raise the arm to before going home
     exploration: float = 1.0  # scales SAC's std; 0 runs its mean
     eval_every: int = 10
     save_every: int = 10
@@ -204,8 +205,20 @@ def reset(arm: SafeArm, buttons: Any, loop: LoopConfig, rng: np.random.Generator
         print("[agent] no reading from the button module; waiting", flush=True)
         time.sleep(2)
     home = np.array([arm.limits.home[j] for j in JOINTS])
-    arm.move_to(home + rng.uniform(-loop.start_jitter_deg, loop.start_jitter_deg, len(JOINTS)))
+    go_home(arm, home + rng.uniform(-loop.start_jitter_deg, loop.start_jitter_deg, len(JOINTS)),
+            loop.reset_lift_deg)
     arm.unlock()
+
+
+def go_home(arm: SafeArm, target: np.ndarray, lift_deg: float) -> None:
+    """Raise the arm first (shoulder_lift back to ``lift_deg``, other joints held)
+    so the hand clears the button box, then glide to ``target``."""
+    lift = JOINTS.index("shoulder_lift")
+    via = arm.positions()
+    if via[lift] > lift_deg:
+        via[lift] = lift_deg
+        arm.move_to(via)
+    arm.move_to(target)
 
 
 def build_method(name: str, policy: str, steps_per_decision: int, device: str | None) -> Any:
@@ -251,7 +264,8 @@ def run(args: argparse.Namespace) -> None:
     from corl_rl_demo.five_motor import SO101FiveMotorFollower
 
     loop = LoopConfig(steps_per_decision=args.steps_per_decision, episodes=args.episodes,
-                      exploration=args.exploration, seed=args.seed, speed_scale=args.speed_scale)
+                      exploration=args.exploration, seed=args.seed, speed_scale=args.speed_scale,
+                      reset_lift_deg=args.reset_lift)
     if not 0.1 <= loop.speed_scale <= 1.0:
         raise SystemExit("--speed-scale must be within 0.1..1")
     method = build_method(args.method, args.policy, loop.steps_per_decision, args.device)
@@ -359,7 +373,7 @@ def run(args: argparse.Namespace) -> None:
         buttons.close()
         try:
             arm.unlock()
-            arm.move_to(np.array([arm.limits.home[j] for j in JOINTS]))
+            go_home(arm, np.array([arm.limits.home[j] for j in JOINTS]), loop.reset_lift_deg)
         finally:
             robot.disconnect()  # torque off; the arm goes limp at its start pose
 
@@ -466,6 +480,8 @@ def main(argv: list[str] | None = None) -> None:
     run_parser.add_argument("--episodes", type=int, default=1000)
     run_parser.add_argument("--speed-scale", type=float, default=1.0,
                             help="follow each plan's path at this fraction of its speed (0.5: half)")
+    run_parser.add_argument("--reset-lift", type=float, default=-60.0,
+                            help="shoulder_lift (deg) the arm rises to before going home; lower is higher")
     run_parser.add_argument("--episode-timeout", type=float, default=15.0,
                             help="seconds without a press before an episode fails")
     run_parser.add_argument("--steps-per-decision", type=int, default=10)
