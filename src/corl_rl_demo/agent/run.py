@@ -194,20 +194,44 @@ def blend(previous_tail: np.ndarray | None, goals: np.ndarray, ticks: int) -> np
     return goals
 
 
-def reset(arm: SafeArm, buttons: Any, loop: LoopConfig, rng: np.random.Generator) -> None:
-    """Wait for cool motors and a live button module, then glide to a start pose
-    drawn near home (the plan's design choice 4)."""
-    while (hottest := arm.check_heat()) >= arm.limits.pause_c:
-        print(f"[agent] motors at {hottest:.0f} C; cooling", flush=True)
-        arm.robot.bus.disable_torque()
-        time.sleep(30)
+def reset(arm: SafeArm, buttons: Any, loop: LoopConfig, rng: np.random.Generator,
+          quit: threading.Event | None = None) -> None:
+    """Cool the motors if they are hot, wait for a live button module, then glide
+    to a start pose drawn near home (the plan's design choice 4)."""
+    home = np.array([arm.limits.home[j] for j in JOINTS])
+    cool_down(arm, home, loop, quit)
     while buttons.seconds_since_reading() > loop.silent_module_s:
         print("[agent] no reading from the button module; waiting", flush=True)
         time.sleep(2)
-    home = np.array([arm.limits.home[j] for j in JOINTS])
     go_home(arm, home + rng.uniform(-loop.start_jitter_deg, loop.start_jitter_deg, len(JOINTS)),
             loop.reset_lift_deg)
     arm.unlock()
+
+
+def cool_down(arm: SafeArm, home: np.ndarray, loop: LoopConfig, quit: threading.Event | None = None,
+              poll_s: float = 10.0) -> None:
+    """At ``pause_c`` or more: go to the start pose, torque off, wait until every
+    motor is back to ``resume_c``, torque on. SAC keeps learning meanwhile."""
+    hottest = arm.check_heat()
+    if hottest < arm.limits.pause_c:
+        return
+    temps = arm.temperatures()
+    hot = max(temps, key=temps.get)
+    print(f"[agent] {hot} at {hottest:.0f} C: resting at the start pose, torque off, "
+          f"until every motor is at {arm.limits.resume_c:.0f} C", flush=True)
+    arm.unlock()
+    go_home(arm, home, loop.reset_lift_deg)
+    arm.go_limp()
+    started = time.monotonic()
+    try:
+        while (hottest := arm.check_heat()) > arm.limits.resume_c:
+            if quit is not None and quit.is_set():
+                return
+            print(f"[agent] cooling: hottest {hottest:.0f} C, {time.monotonic() - started:.0f} s", flush=True)
+            time.sleep(poll_s)
+    finally:
+        arm.wake()
+    print(f"[agent] cooled to {hottest:.0f} C in {time.monotonic() - started:.0f} s; carrying on", flush=True)
 
 
 def go_home(arm: SafeArm, target: np.ndarray, lift_deg: float) -> None:
@@ -328,7 +352,9 @@ def run(args: argparse.Namespace) -> None:
                 break
             while keys.pause.is_set() and not keys.quit.is_set():
                 time.sleep(0.1)
-            reset(arm, buttons, loop, rng)
+            reset(arm, buttons, loop, rng, keys.quit)
+            if keys.quit.is_set():
+                break
             evaluating = loop.eval_every > 0 and index % loop.eval_every == 0
             result = run_episode(
                 arm=arm, buttons=buttons, method=method, sac=sac, learner=learner,

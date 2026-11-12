@@ -8,8 +8,9 @@ Three layers, from the outside in:
    ``current_ticks`` ticks in a row, or the operator's stop holds the arm where it
    is and raises ``SafetyStop``: the episode ends as a failure with a penalty and
    the arm glides back to its start pose before the next one.
-2. Heat, between episodes. Above ``pause_c`` the run rests with torque off until
-   the motors cool; at ``hot_c`` it stops (``Overheat``).
+2. Heat, between episodes. At ``pause_c`` the arm goes to its start pose, torque
+   off, until every motor is back to ``resume_c``; then the run carries on. At
+   ``hot_c`` it stops (``Overheat``).
 3. The servos themselves (``apply_servo_caps``): a torque cap, a speed cap and an
    acceleration ramp, written to RAM registers, so a power cycle undoes them.
 
@@ -56,8 +57,9 @@ class Limits:
     max_accel_deg_s2: float = 2500.0
     max_current: int = 280  # Feetech counts (6.5 mA); the servos cut out at 310
     current_ticks: int = 3  # consecutive ticks over max_current before stopping
-    hot_c: float = 50.0
-    pause_c: float = 45.0  # rest between episodes until the motors cool below this
+    hot_c: float = 60.0  # stop the run (the servos cut out near 70)
+    pause_c: float = 45.0  # rest between episodes, torque off, from this
+    resume_c: float = 40.0  # ... until every motor is back to this
 
     @classmethod
     def load(cls, path: str | Path = LIMITS_FILE, **overrides: Any) -> Limits:
@@ -290,6 +292,19 @@ class SafeArm:
             self.robot.bus.sync_write("Goal_Position", dict(zip(JOINTS, point.tolist())))
             time.sleep(1.0 / rate)
         time.sleep(0.3)
+
+    def go_limp(self) -> None:
+        """Torque off (call it at the start pose, where the arm rests on itself)."""
+        if not self.dry_run:
+            self.robot.bus.disable_torque()
+
+    def wake(self) -> None:
+        """Torque back on, holding the arm where it lies (goal = present first)."""
+        if self.dry_run:
+            return
+        present = self.positions()
+        self.robot.bus.sync_write("Goal_Position", dict(zip(JOINTS, present.tolist())))
+        self.robot.bus.enable_torque()
 
     def unlock(self) -> None:
         self._locked = None

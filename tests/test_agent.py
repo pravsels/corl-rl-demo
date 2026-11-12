@@ -483,3 +483,49 @@ def test_go_home_lifts_before_returning():
     arm.moves.clear()
     go_home(arm, home, -60.0)
     assert len(arm.moves) == 1
+
+
+def test_cool_down_rests_limp_at_home_then_wakes():
+    from corl_rl_demo.agent.run import cool_down
+
+    class Arm:
+        def __init__(self, temps):
+            self.limits = Limits({j: -200 for j in JOINTS}, {j: 200 for j in JOINTS}, {j: 0 for j in JOINTS})
+            self.temps, self.events = list(temps), []
+            self.at = np.full(len(JOINTS), 20.0)
+
+        def check_heat(self):
+            return self.temps[0]
+
+        def temperatures(self):
+            t = self.temps.pop(0) if len(self.temps) > 1 else self.temps[0]
+            return {j: t for j in JOINTS}
+
+        def positions(self):
+            return self.at.copy()
+
+        def move_to(self, target):
+            self.events.append("move")
+            self.at = np.asarray(target, float)
+
+        def unlock(self):
+            self.events.append("unlock")
+
+        def go_limp(self):
+            self.events.append("limp")
+
+        def wake(self):
+            self.events.append("wake")
+
+    arm = Arm([30.0])
+    cool_down(arm, np.zeros(len(JOINTS)), LoopConfig(), poll_s=0)
+    assert arm.events == []
+
+    class Cooling(Arm):
+        def check_heat(self):
+            return self.temps.pop(0) if len(self.temps) > 1 else self.temps[0]
+
+    arm = Cooling([47.0, 47.0, 44.0, 41.0, 40.0])
+    cool_down(arm, np.zeros(len(JOINTS)), LoopConfig(), poll_s=0)
+    assert arm.events[0] == "unlock" and arm.events[-2:] == ["limp", "wake"]
+    assert "move" in arm.events and np.allclose(arm.at, 0)
