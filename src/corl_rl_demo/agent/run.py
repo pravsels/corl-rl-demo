@@ -298,8 +298,10 @@ def run(args: argparse.Namespace) -> None:
     warm = arm.observe()
     method.goals(method.decide(warm, joints(warm), 0.0), np.zeros(method.action_dim))
     print(f"[agent] policy warmed up in {time.monotonic() - started:.1f} s", flush=True)
-    learner = LearnerThread(sac, utd=args.utd, warmup=args.warmup) if learning else None
+    learner = LearnerThread(sac, utd=args.utd, warmup_episodes=args.warmup_episodes) if learning else None
     if learner is not None:
+        if sac.buffer.size > 0:  # resumed: the buffer already holds earlier episodes
+            learner.episodes = learner.warmup_episodes
         learner.start()
     keys = Keys(arm)
     keys.start()
@@ -324,6 +326,8 @@ def run(args: argparse.Namespace) -> None:
             result["hottest_c"] = max(arm.temperatures().values())
             if result["outcome"] == "quit":
                 break
+            if learner is not None:
+                learner.episode_ended()
             if not evaluating:
                 recent = (recent + [result["success"]])[-20:]
             record = {
@@ -336,6 +340,7 @@ def run(args: argparse.Namespace) -> None:
             log.flush()
             print(f"[agent] episode {index}{' (eval)' if evaluating else ''}: {result['outcome']}"
                   f"{'' if result.get('time_to_press_s') is None else f' in {result['time_to_press_s']} s'}"
+                  f"{f' (SAC starts after {learner.warmup_episodes} episodes)' if learner and learner.warming_up else ''}"
                   f"; last {len(recent)}: {sum(recent)}/{len(recent)}; {sac.steps} updates; "
                   f"peak current {result['peak_current']}, hottest {result['hottest_c']:.0f} C\n"
                   f"        policy asked up to {result['asked_ahead_max_deg']} deg ahead, sent "
@@ -466,8 +471,8 @@ def main(argv: list[str] | None = None) -> None:
     run_parser.add_argument("--steps-per-decision", type=int, default=10)
     run_parser.add_argument("--exploration", type=float, default=1.0, help="scale of SAC's std; 0 runs its mean")
     run_parser.add_argument("--utd", type=int, default=4, help="SAC updates per transition")
-    run_parser.add_argument("--warmup", type=int, default=1,
-                            help="transitions in the buffer before SAC starts updating")
+    run_parser.add_argument("--warmup-episodes", type=int, default=3,
+                            help="episodes to collect before SAC starts updating")
     run_parser.add_argument("--device", default=None, help="base policy device (default mps)")
     run_parser.add_argument("--seed", type=int, default=0)
     run_parser.add_argument("--dry-run", action="store_true",

@@ -11,7 +11,7 @@ from corl_rl_demo.agent.episode import RewardConfig, score
 from corl_rl_demo.agent.methods import DSRLFlow, ResidualACT
 from corl_rl_demo.agent.run import Keys, LoopConfig, run_episode
 from corl_rl_demo.agent.safety import Limits, SafeArm, SafetyStop
-from corl_rl_demo.agent.sac import SAC, ReplayBuffer, SACConfig
+from corl_rl_demo.agent.sac import SAC, LearnerThread, ReplayBuffer, SACConfig
 from corl_rl_demo.buttons import PressLatch
 from corl_rl_demo.rig import JOINTS
 
@@ -438,3 +438,24 @@ def test_stretch_follows_the_same_path_more_slowly():
     np.testing.assert_allclose(slow[-1], goals[-1])
     np.testing.assert_allclose(np.diff(np.vstack((start, slow)), axis=0), 2.0)  # 2 deg per tick
     assert stretch(goals, start, 1.0) is goals
+
+
+def test_learner_waits_for_warmup_episodes():
+    import time
+    sac = SAC(SACConfig(obs_dim=2, action_dim=1, batch_size=4), seed=0)
+    learner = LearnerThread(sac, utd=1, warmup_episodes=3)
+    learner.start()
+    try:
+        for episode in range(3):
+            for _ in range(4):
+                sac.buffer.add(np.zeros(2), np.zeros(1), 0.0, np.zeros(2), False)
+                learner.transitions_added()
+            time.sleep(0.2)
+            assert sac.steps == 0
+            learner.episode_ended()
+        deadline = time.monotonic() + 10
+        while sac.steps < 12 and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert sac.steps == 12
+    finally:
+        learner.stop()

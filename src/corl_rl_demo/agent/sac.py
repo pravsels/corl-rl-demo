@@ -214,11 +214,13 @@ class SAC:
 
 class LearnerThread(threading.Thread):
     """Runs ``utd`` updates per new transition in the background and publishes
-    the actor every ``publish_every`` updates."""
+    the actor every ``publish_every`` updates. Updates wait until ``warmup_episodes``
+    episodes have ended (``episode_ended``), then catch up on everything owed."""
 
-    def __init__(self, sac: SAC, *, utd: int = 4, warmup: int = 1, publish_every: int = 50) -> None:
+    def __init__(self, sac: SAC, *, utd: int = 4, warmup_episodes: int = 3, publish_every: int = 50) -> None:
         super().__init__(daemon=True)
-        self.sac, self.utd, self.warmup, self.publish_every = sac, utd, warmup, publish_every
+        self.sac, self.utd, self.warmup_episodes, self.publish_every = sac, utd, warmup_episodes, publish_every
+        self.episodes = 0
         self._owed = 0
         self._cv = threading.Condition()
         self._stop_event = threading.Event()
@@ -229,6 +231,15 @@ class LearnerThread(threading.Thread):
             self._owed += n * self.utd
             self._cv.notify()
 
+    def episode_ended(self) -> None:
+        with self._cv:
+            self.episodes += 1
+            self._cv.notify()
+
+    @property
+    def warming_up(self) -> bool:
+        return self.episodes < self.warmup_episodes
+
     def stop(self) -> None:
         self._stop_event.set()
         with self._cv:
@@ -238,7 +249,7 @@ class LearnerThread(threading.Thread):
         while not self._stop_event.is_set():
             with self._cv:
                 while not self._stop_event.is_set() and (
-                    self._owed <= 0 or self.sac.buffer.size < self.warmup
+                    self._owed <= 0 or self.warming_up
                 ):
                     self._cv.wait(timeout=0.5)
                 if self._stop_event.is_set():
