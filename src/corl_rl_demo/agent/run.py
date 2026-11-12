@@ -487,7 +487,7 @@ def main(argv: list[str] | None = None) -> None:
     run_parser.add_argument("--steps-per-decision", type=int, default=10)
     run_parser.add_argument("--exploration", type=float, default=1.0, help="scale of SAC's std; 0 runs its mean")
     run_parser.add_argument("--utd", type=int, default=4, help="SAC updates per transition")
-    run_parser.add_argument("--warmup-episodes", type=int, default=3,
+    run_parser.add_argument("--warmup-episodes", type=int, default=1,
                             help="episodes to collect before SAC starts updating")
     run_parser.add_argument("--device", default=None, help="base policy device (default mps)")
     run_parser.add_argument("--seed", type=int, default=0)

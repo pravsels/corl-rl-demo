@@ -217,7 +217,7 @@ class LearnerThread(threading.Thread):
     the actor every ``publish_every`` updates. Updates wait until ``warmup_episodes``
     episodes have ended (``episode_ended``), then catch up on everything owed."""
 
-    def __init__(self, sac: SAC, *, utd: int = 4, warmup_episodes: int = 3, publish_every: int = 50) -> None:
+    def __init__(self, sac: SAC, *, utd: int = 4, warmup_episodes: int = 1, publish_every: int = 50) -> None:
         super().__init__(daemon=True)
         self.sac, self.utd, self.warmup_episodes, self.publish_every = sac, utd, warmup_episodes, publish_every
         self.episodes = 0
