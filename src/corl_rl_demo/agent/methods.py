@@ -164,6 +164,11 @@ class DiffusionBase:
     """A trained LeRobot Diffusion Policy checkpoint, frozen, with its observation
     history (``n_obs_steps`` frames, one control tick apart) kept here.
 
+    Think of this class as an adapter around LeRobot: it turns raw camera and
+    joint observations into the model's conditioning vector, then turns a noise
+    trajectory into joint targets. DSRL changes only that input noise; it never
+    updates this frozen model.
+
     ``push`` adds one tick's observation; ``plan`` runs the denoiser from a given
     noise and returns the executed part of the chunk (``n_action_steps`` absolute
     joint goals), what follows it, and the encoder's conditioning vector.
@@ -176,8 +181,12 @@ class DiffusionBase:
         from corl_rl_demo.agent.flow import default_device
 
         self.device = torch.device(device) if device else default_device()
+        # eval() disables training-only behavior such as dropout. no_grad() on
+        # the methods below also prevents gradients and keeps inference cheap.
         self.policy = DiffusionPolicy.from_pretrained(str(path)).to(self.device).eval()
         self.policy.config.device = str(self.device)
+        # LeRobot checkpoints include processors for resizing/normalizing inputs
+        # and converting the model's normalized outputs back to joint units.
         self.pre, self.post = make_pre_post_processors(
             self.policy.config, pretrained_path=str(path),
             preprocessor_overrides={"device_processor": {"device": str(self.device)}},
@@ -185,44 +194,63 @@ class DiffusionBase:
         config = self.policy.config
         self.image_keys = list(config.image_features)
         self.cameras = [key.removeprefix("observation.images.") for key in self.image_keys]
+        # horizon: number of action rows denoised at once.
+        # n_obs_steps: past observations used to condition that denoising.
+        # n_action_steps: rows actually sent to the robot before replanning.
         self.horizon, self.n_obs_steps, self.n_action_steps = config.horizon, config.n_obs_steps, config.n_action_steps
         self.action_dim = config.action_feature.shape[0]
         self.policy.reset()
 
     def reset(self) -> None:
+        # Clear the rolling observation queues at the start of an episode.
         self.policy.reset()
 
     @torch.no_grad()
     def push(self, robot_obs: dict[str, Any], state: np.ndarray, task: str) -> None:
+        """Preprocess one control tick and append it to the history queues."""
         from lerobot.policies.utils import populate_queues, prepare_observation_for_inference
         from lerobot.utils.constants import OBS_IMAGES
 
+        # Use LeRobot's checkpoint field names so its saved processors know how
+        # to normalize each value.
         observation = {"observation.state": state.astype(np.float32)}
         for camera in self.cameras:
             observation[f"observation.images.{camera}"] = robot_obs[camera]
         batch = self.pre(prepare_observation_for_inference(observation, self.device, task, None))
         batch = dict(batch)
+        # The diffusion model expects all cameras in one tensor, whereas the
+        # preprocessing pipeline returns one tensor per camera.
         batch[OBS_IMAGES] = torch.stack([batch[key] for key in self.image_keys], dim=-4)
+        # populate_queues also pads the beginning of an episode until enough
+        # observations exist for an n_obs_steps-long history.
         self.policy._queues = populate_queues(self.policy._queues, batch)
 
     def _history(self) -> dict[str, torch.Tensor]:
         from lerobot.utils.constants import OBS_IMAGES, OBS_STATE
 
+        # Add a time/history axis to the queued tensors.
         return {key: torch.stack(list(self.policy._queues[key]), dim=1) for key in (OBS_STATE, OBS_IMAGES)}
 
     @torch.no_grad()
     def condition(self) -> torch.Tensor:
-        """The encoder's conditioning vector for the current history, ``(1, D)``."""
+        """Encode observation history into the context vector ``(batch=1, D)``."""
         return self.policy.diffusion._prepare_global_conditioning(self._history())
 
     @torch.no_grad()
     def plan(self, condition: torch.Tensor, noise: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        # Start the reverse-diffusion process from the noise selected by DSRL.
+        # Input and sampled output both describe a full (horizon, action_dim)
+        # trajectory; the leading 1 below is the batch size.
         sample = self.policy.diffusion.conditional_sample(
             1, global_cond=condition,
             noise=torch.as_tensor(noise, dtype=torch.float32, device=self.device)[None],
         )
+        # The model's horizon includes positions aligned with observation
+        # history. Skip those, then undo checkpoint output normalization.
         start = self.n_obs_steps - 1
         actions = self.post(sample[:, start:])[0].float().cpu().numpy()
+        # Execute only the first part now. Keep the remainder so the caller can
+        # blend it into the next plan instead of introducing a sudden jump.
         return actions[: self.n_action_steps], actions[self.n_action_steps:]
 
 
@@ -230,51 +258,79 @@ class DSRLDiffusion:
     """The Diffusion Policy acts from a noise SAC chooses (``noise_steps`` rows in
     ``[-bound, bound]``, the last repeated over the horizon), or, run alone, from
     random noise as it does natively. It plans every ``n_action_steps`` ticks and
-    sees every tick's observation in between (``observe_tick``)."""
+    sees every tick's observation in between (``observe_tick``).
+
+    In short: observations -> SAC action -> diffusion noise -> robot joint plan.
+    SAC learns which starting noise makes the frozen base policy more successful.
+    """
 
     name = "dsrl-diffusion"
 
     def __init__(self, base: DiffusionBase, *, noise_steps: int = 4, bound: float = 1.5,
                  task: str = "Press the green button") -> None:
         self.base, self.noise_steps, self.bound, self.task = base, noise_steps, bound, task
+        # One decision controls the robot until the base policy is due to replan.
         self.k = base.n_action_steps
+        # SAC emits noise_steps rows, with one value per robot joint/action.
         self.action_dim = noise_steps * base.action_dim
         self.smooth_ticks = 5
+        # random_noise is used to benchmark the original base policy without
+        # SAC: False means SAC noise, True means fresh noise for each plan, and
+        # "episode" means one random noise trajectory reused for an episode.
         self.random_noise: str | bool = False
         self._episode_noise: np.ndarray | None = None
         self._rng = np.random.default_rng()
         self.tail = np.zeros((0, base.action_dim))
+        # SAC needs fixed input/output dimensions before real observations are
+        # available. A temporary black observation lets us ask the encoder for D.
         base.push(_blank_observation(base), np.zeros(base.action_dim), task)
+        # SAC observes [diffusion condition, normalized joints, normalized time].
         self.obs_dim = int(base.condition().numel()) + base.action_dim + 1
         base.reset()
 
     def begin_episode(self) -> None:
+        # Neither observation history nor episode-level random noise should leak
+        # from one episode into the next.
         self.base.reset()
         self._episode_noise = None
 
     def observe_tick(self, robot_obs: dict[str, Any], state: np.ndarray) -> None:
+        # Plans last several control ticks. Record intermediate ticks too, so the
+        # next decision is conditioned on a dense and current observation history.
         self.base.push(robot_obs, state, self.task)
 
     def decide(self, robot_obs: dict[str, Any], state: np.ndarray, elapsed_s: float = 0.0) -> Decision:
+        # Add the observation at the decision tick, then encode recent history.
         self.base.push(robot_obs, state, self.task)
         condition = self.base.condition()
+        # This flat vector is what SAC's small MLP sees. The unflattened
+        # condition is retained in Decision.context for diffusion inference.
         obs = np.concatenate((condition[0].float().cpu().numpy(), state / STATE_SCALE,
                               [elapsed_s / TIME_SCALE])).astype(np.float32)
         return Decision(obs, state, condition)
 
     def noise(self, action: np.ndarray) -> np.ndarray:
         shape = (self.base.horizon, self.base.action_dim)
+        # These two branches bypass SAC and reproduce ordinary diffusion-policy
+        # sampling, useful as a baseline when evaluating whether DSRL helped.
         if self.random_noise == "episode":
             if self._episode_noise is None:
                 self._episode_noise = self._rng.standard_normal(shape).astype(np.float32)
             return self._episode_noise
         if self.random_noise:
             return self._rng.standard_normal(shape).astype(np.float32)
+        # SAC actions arrive in [-1, 1]. Scale them to [-bound, bound], reshape
+        # the flat vector into initial trajectory rows, and repeat the last row
+        # to fill the full diffusion horizon. This keeps SAC's output small.
         rows = np.asarray(action, dtype=np.float32).reshape(self.noise_steps, self.base.action_dim) * self.bound
         return np.concatenate((rows, np.repeat(rows[-1:], shape[0] - self.noise_steps, axis=0)))
 
     def goals(self, decision: Decision, action: np.ndarray) -> np.ndarray:
+        # Denoise SAC's chosen noise while conditioning on the observations that
+        # produced this same SAC decision.
         executed, tail = self.base.plan(decision.context, self.noise(action))
+        # Smooth the whole trajectory before splitting it, preserving continuity
+        # at the boundary between the part executed now and the saved tail.
         plan = smooth(np.concatenate((executed, tail)), self.smooth_ticks)
         self.tail = plan[len(executed):]
         return plan[: len(executed)]
